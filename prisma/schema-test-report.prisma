@@ -1,0 +1,37 @@
+// Simplified Report Schema
+
+model Report {
+  id             String    @id @default(cuid())
+  botId          String
+  bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  // 기본 정보
+  symbol         String
+  currentPrice   Float
+  timestamp      DateTime  @default(now())
+
+  // 최종 결정
+  decision       String    // BUY, SELL, HOLD
+  decisionReason String    @db.Text
+
+  // 전략 파라미터 스냅샷 (나중에 재현 가능하도록)
+  strategyParams Json      // entry/exit conditions with parameters
+
+  // 관계
+  indicators     ReportIndicator[]
+}
+
+model ReportIndicator {
+  id           String    @id @default(cuid())
+  reportId     String
+  report       Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  // 지표 정보
+  indicator    String    // RSI, SMA, EMA, MACD, BBANDS
+  params       Json      // { period: 14, series_type: 'close' }
+
+  // 지표 값
+  value        Json      // 단순값 또는 복합값 (MACD의 경우 {macdLine, signalLine, histogram})
+
+  createdAt    DateTime  @default(now())
+}

@@ -1,0 +1,254 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Strategy defines trading logic and parameters
+model Strategy {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  timeHorizon     TimeHorizon   @default(SWING)      // 투자 기간
+  riskAppetite    RiskAppetite  @default(BALANCED)   // 리스크 성향
+  entryConditions Json     // Indicators and conditions for entry
+  exitConditions  Json     // Indicators and conditions for exit
+  stopLoss        Float    @default(5.0)    // 5% 손절
+  takeProfit      Float    @default(10.0)   // 10% 익절
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relationships
+  bots            Bot[]
+
+  @@map("strategies")
+}
+
+// Bot represents strategy + symbol combination
+model Bot {
+  id             String   @id @default(cuid())
+  strategyId     String
+  name           String
+  symbol         String
+  status         BotStatus @default(STOPPED) // ACTIVE, PAUSED, STOPPED, ERROR
+  mode           TradingMode @default(PAPER)  // PAPER만 지원
+  orderType      String   @default("MARKET")  // MARKET, LIMIT
+  fundAllocation Float    @default(1000.0)   // 할당 자금
+  totalReturns   Float    @default(0.0)      // 총 수익 (실현 손익)
+  realizedCash   Float    @default(0.0)      // 매도로 회수한 현금
+  winRate        Float    @default(0.0)      // 승률 %
+  totalTrades    Int      @default(0)        // 총 거래 수
+  lastExecutedAt DateTime?
+  analystRating  String?  // JSON: 애널리스트 레이팅 데이터 (FMP)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relationships
+  strategy       Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  trades         Trade[]
+  reports        Report[]
+  positions      Position[] // 봇별 포지션
+
+  @@index([strategyId])
+  @@index([symbol])
+  @@index([status])
+  @@map("bots")
+}
+
+// Trade represents individual buy/sell transactions
+model Trade {
+  id            String      @id @default(cuid())
+  botId         String
+  symbol        String
+  side          TradeSide   // BUY or SELL
+  quantity      Float
+  price         Float
+  total         Float       // quantity * price
+  status        TradeStatus @default(EXECUTED) // EXECUTED, FAILED
+  reason        String?     // "RSI < 30" (거래 이유)
+  alpacaOrderId String?     // Alpaca Order ID for tracking fill status
+  executedAt    DateTime    @default(now())
+  createdAt     DateTime    @default(now())
+
+  // Relationships
+  bot           Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([symbol])
+  @@index([executedAt])
+  @@map("trades")
+}
+
+// Portfolio represents global portfolio state
+model Portfolio {
+  id                  String   @id @default(cuid())
+  totalCash           Float    @default(10000.0)  // 전체 현금
+  totalValue          Float    @default(10000.0)  // 전체 자산 가치
+  totalReturns        Float    @default(0.0)      // 전체 수익
+  totalReturnsPercent Float    @default(0.0)      // 전체 수익률
+  updatedAt           DateTime @updatedAt
+  createdAt           DateTime @default(now())
+
+  @@map("portfolios")
+}
+
+// Position represents bot-specific symbol holdings
+model Position {
+  id            String   @id @default(cuid())
+  botId         String   // 봇별 포지션 관리
+  symbol        String   // 종목 심볼
+  quantity      Float    // 현재 보유 수량
+  avgEntryPrice Float    // 평균 진입가
+  totalCost     Float    // 총 투자금 (quantity * avgEntryPrice)
+  marketValue   Float    @default(0.0) // 현재 시장가치 (quantity * currentPrice)
+  unrealizedPL  Float    @default(0.0) // 미실현 손익 (marketValue - totalCost)
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  // Relationships
+  bot           Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([botId, symbol]) // 봇당 종목당 하나의 포지션만
+  @@map("positions")
+}
+
+// MarketData stores market price information cache
+model MarketData {
+  id        String   @id @default(cuid())
+  symbol    String
+  open      Float    // 시가
+  high      Float    // 고가
+  low       Float    // 저가
+  close     Float    // 종가
+  volume    Float    // 거래량
+  timestamp DateTime // 데이터 시간
+  source    String   @default("ALPHA_VANTAGE")
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, timestamp])
+  @@index([symbol])
+  @@map("market_data")
+}
+
+// WatchList stores symbols to track for market data
+model WatchList {
+  id       String   @id @default(cuid())
+  symbol   String   @unique  // "AAPL"
+  name     String             // "Apple Inc."
+  isActive Boolean  @default(true)
+  addedAt  DateTime @default(now())
+
+  @@map("watchlist")
+}
+
+// Report represents bot test analysis results
+model Report {
+  id             String    @id @default(cuid())
+  botId          String
+  bot            Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  // 기본 정보
+  symbol         String
+  currentPrice   Float
+  executionTime  Int       // ms
+  timestamp      DateTime  @default(now())
+
+  // 목표가 정보
+  targetPrice       Float?
+  stopLossPrice     Float?
+  takeProfitPercent Float?
+  stopLossPercent   Float?
+
+  // 뉴스 분석
+  newsArticles   String?   // JSON stringified
+  newsSummary    String?
+  newsSentiment  Float?
+  sentimentLabel String?
+
+  // 🆕 FMP 파싱 데이터 (요약)
+  fmpParsedData  String?   // JSON stringified: ParsedFMPData
+
+  // 🆕 백테스팅용 점수 상세 데이터
+  technicalScore      Float?    // 기술 지표 점수 (0.5 or -0.5)
+  baseScore           Float?    // 객관적 기초 점수 (뉴스 70% + 기술 30%)
+  gptAdjustment       Float?    // GPT 조정값 (±0.5)
+  finalScore          Float?    // 최종 점수 (baseScore + gptAdjustment)
+  objectiveReasoning  String?   // 객관적 분석 설명
+  aiReasoning         String?   // AI 판단 설명
+
+  // AI 결정
+  aiAction       String?   // BUY, SELL, HOLD
+  aiReason       String?   // Deprecated - use aiReasoning
+  aiLimitPrice   Float?
+  aiQuantity     Int?
+
+  // 최종 결정
+  decision       String    // BUY, SELL, HOLD
+  decisionReason String
+
+  // 거래 실행 결과
+  tradeExecuted  Boolean   @default(false)
+  tradeSuccess   Boolean?
+  tradeOrderId   String?
+  tradeMessage   String?
+  tradeError     String?
+
+  // 전략 파라미터 스냅샷
+  strategyParams String    // JSON stringified
+
+  // API 호출 내역
+  apiCalls       String    // JSON stringified
+
+  // 조건 평가 결과
+  conditions     String    // JSON stringified
+
+  // 오류
+  error          String?
+
+  createdAt      DateTime  @default(now())
+
+  @@index([botId])
+  @@index([timestamp])
+  @@map("reports")
+}
+
+
+// Enums
+enum BotStatus {
+  ACTIVE
+  PAUSED
+  STOPPED
+  ERROR
+}
+
+enum TradingMode {
+  PAPER
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+enum TradeStatus {
+  EXECUTED
+  FAILED
+}
+
+enum TimeHorizon {
+  SHORT_TERM  // Day Trading
+  SWING       // Swing Trading
+  LONG_TERM   // Position Trading
+}
+
+enum RiskAppetite {
+  DEFENSIVE   // Conservative
+  BALANCED    // Moderate
+  AGGRESSIVE  // Aggressive
+}

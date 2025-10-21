@@ -1,0 +1,768 @@
+openapi: 3.0.3
+info:
+  title: StockHero Clone API
+  description: Automated Trading Bot Platform API
+  version: 1.0.0
+  contact:
+    name: StockHero Clone API Support
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+
+paths:
+  # Bot Management
+  /bots:
+    get:
+      summary: List all user bots
+      tags: [Bots]
+      responses:
+        '200':
+          description: List of bots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Bot'
+    post:
+      summary: Create a new bot
+      tags: [Bots]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBotRequest'
+      responses:
+        '201':
+          description: Bot created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /bots/{botId}:
+    get:
+      summary: Get bot details
+      tags: [Bots]
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bot details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update bot configuration
+      tags: [Bots]
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBotRequest'
+      responses:
+        '200':
+          description: Bot updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete bot
+      tags: [Bots]
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Bot deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bots/{botId}/start:
+    post:
+      summary: Start bot execution
+      tags: [Bots]
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bot started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /bots/{botId}/stop:
+    post:
+      summary: Stop bot execution
+      tags: [Bots]
+      parameters:
+        - name: botId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Bot stopped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bot'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Portfolio Management
+  /portfolios:
+    get:
+      summary: List user portfolios
+      tags: [Portfolios]
+      responses:
+        '200':
+          description: List of portfolios
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Portfolio'
+
+  /portfolios/{portfolioId}:
+    get:
+      summary: Get portfolio details
+      tags: [Portfolios]
+      parameters:
+        - name: portfolioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Portfolio details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Portfolio'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Trade Management
+  /trades:
+    get:
+      summary: List trades with filters
+      tags: [Trades]
+      parameters:
+        - name: portfolioId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: botId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: symbol
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, EXECUTED, FAILED, CANCELLED]
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of trades
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trades:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Trade'
+                  total:
+                    type: integer
+                  hasMore:
+                    type: boolean
+
+    post:
+      summary: Create a new trade (manual or bot)
+      tags: [Trades]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTradeRequest'
+      responses:
+        '201':
+          description: Trade created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trade'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # Strategy Management
+  /strategies:
+    get:
+      summary: List strategies
+      tags: [Strategies]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [TECHNICAL]
+      responses:
+        '200':
+          description: List of strategies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Strategy'
+
+    post:
+      summary: Create a new strategy
+      tags: [Strategies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStrategyRequest'
+      responses:
+        '201':
+          description: Strategy created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /strategies/{strategyId}:
+    get:
+      summary: Get strategy details
+      tags: [Strategies]
+      parameters:
+        - name: strategyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Strategy details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Strategy'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Market Data
+  /market-data/{symbol}:
+    get:
+      summary: Get market data for symbol
+      tags: [MarketData]
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: interval
+          in: query
+          schema:
+            type: string
+            enum: ['1m', '5m', '15m', '1h', '1d']
+            default: '15m'
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Market data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MarketData'
+
+  # Technical Indicators
+  /indicators/{symbol}/{indicator}:
+    get:
+      summary: Get technical indicator data
+      tags: [TechnicalIndicators]
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: indicator
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [RSI, MACD, BB, MA]
+        - name: period
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 14
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Technical indicator data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TechnicalIndicator'
+
+components:
+  schemas:
+    Bot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 3
+          maxLength: 50
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED, STOPPED, ERROR]
+        mode:
+          type: string
+          enum: [PAPER]
+        strategyId:
+          type: string
+          format: uuid
+          nullable: true
+        config:
+          type: object
+        lastExecutedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, status, mode, config, createdAt, updatedAt]
+
+    CreateBotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 50
+        description:
+          type: string
+        mode:
+          type: string
+          enum: [PAPER]
+          default: PAPER
+        strategyId:
+          type: string
+          format: uuid
+          nullable: true
+        config:
+          type: object
+          default: {}
+      required: [name, mode]
+
+    UpdateBotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 50
+        description:
+          type: string
+        strategyId:
+          type: string
+          format: uuid
+          nullable: true
+        config:
+          type: object
+
+    Portfolio:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        botId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        cashBalance:
+          type: number
+          format: decimal
+        totalValue:
+          type: number
+          format: decimal
+        totalReturns:
+          type: number
+          format: decimal
+        totalReturnsPercent:
+          type: number
+          format: decimal
+        dayReturns:
+          type: number
+          format: decimal
+        dayReturnsPercent:
+          type: number
+          format: decimal
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Position'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, cashBalance, totalValue, positions, createdAt, updatedAt]
+
+    Position:
+      type: object
+      properties:
+        symbol:
+          type: string
+        quantity:
+          type: number
+        avgPrice:
+          type: number
+        currentPrice:
+          type: number
+        unrealizedPnL:
+          type: number
+        unrealizedPnLPercent:
+          type: number
+      required: [symbol, quantity, avgPrice, currentPrice, unrealizedPnL, unrealizedPnLPercent]
+
+    Trade:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        portfolioId:
+          type: string
+          format: uuid
+        botId:
+          type: string
+          format: uuid
+          nullable: true
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [BUY, SELL]
+        quantity:
+          type: number
+        price:
+          type: number
+        totalAmount:
+          type: number
+        fees:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, EXECUTED, FAILED, CANCELLED]
+        executedAt:
+          type: string
+          format: date-time
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, portfolioId, symbol, side, quantity, price, totalAmount, fees, status, createdAt, updatedAt]
+
+    CreateTradeRequest:
+      type: object
+      properties:
+        portfolioId:
+          type: string
+          format: uuid
+        botId:
+          type: string
+          format: uuid
+          nullable: true
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [BUY, SELL]
+        quantity:
+          type: number
+          minimum: 0.01
+        price:
+          type: number
+          minimum: 0.01
+        reason:
+          type: string
+      required: [portfolioId, symbol, side, quantity, price]
+
+    Strategy:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [TECHNICAL, NEWS, HYBRID]
+        parameters:
+          type: object
+        indicators:
+          type: array
+          items:
+            type: string
+        riskLevel:
+          type: integer
+          minimum: 1
+          maximum: 5
+        performance:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, type, parameters, indicators, riskLevel, createdAt, updatedAt]
+
+    CreateStrategyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 100
+        description:
+          type: string
+        type:
+          type: string
+          enum: [TECHNICAL, NEWS, HYBRID]
+        parameters:
+          type: object
+          default: {}
+        indicators:
+          type: array
+          items:
+            type: string
+          default: []
+        riskLevel:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 3
+          default: false
+      required: [name, type]
+
+    MarketData:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        symbol:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+        source:
+          type: string
+          enum: [TRADINGVIEW]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, symbol, timestamp, open, high, low, close, volume, source, createdAt]
+
+    TechnicalIndicator:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        symbol:
+          type: string
+        indicator:
+          type: string
+          enum: [RSI, MACD, BB, MA]
+        period:
+          type: integer
+        value:
+          type: number
+        metadata:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, symbol, indicator, period, value, timestamp, createdAt]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+      required: [error, message]
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
