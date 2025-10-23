@@ -19,6 +19,7 @@ import {
   AnalystRating,
   UpcomingEarnings,
   StockSplit,
+  InsiderTrading,
   MarketMover,
   MarketMovers,
   MarketEventsResponse,
@@ -28,6 +29,7 @@ import {
   FMPRatingResponse,
   FMPEarningsCalendarResponse,
   FMPStockSplitResponse,
+  FMPInsiderTradingResponse,
   MarketEventsAPIError,
   MarketEventsRateLimitError,
 } from '@/lib/types/marketEvents';
@@ -56,6 +58,7 @@ class MarketEventsService {
   private ratingsCache: CacheEntry<AnalystRating[]> | null = null;
   private earningsCache: CacheEntry<UpcomingEarnings[]> | null = null;
   private splitsCache: CacheEntry<StockSplit[]> | null = null;
+  private insiderTradingCache: CacheEntry<InsiderTrading[]> | null = null;
   private marketMoversCache: CacheEntry<MarketMovers> | null = null;
 
   constructor() {
@@ -440,7 +443,83 @@ class MarketEventsService {
   }
 
   // ========================================
-  // 6. Market Movers (Alpha Vantage)
+  // 6. Insider Trading
+  // ========================================
+
+  /**
+   * Fetch insider trading data (최근 7일, 매수 거래만)
+   */
+  async getInsiderTrading(options?: { limit?: number }): Promise<InsiderTrading[]> {
+    // Check cache
+    if (this.insiderTradingCache && this.isCacheValid(this.insiderTradingCache)) {
+      console.log('[MarketEvents] Using cached insider trading data');
+      return options?.limit
+        ? this.insiderTradingCache.data.slice(0, options.limit)
+        : this.insiderTradingCache.data;
+    }
+
+    console.log('[MarketEvents] Fetching fresh insider trading data from FMP');
+
+    try {
+      // Get recent insider trades (without symbol filter to get more data)
+      const rawData = await this.fetchFMP<FMPInsiderTradingResponse[]>('/v4/insider-trading', {
+        page: '0',
+      });
+
+      // Check if rawData is an array
+      if (!Array.isArray(rawData)) {
+        console.error('[MarketEvents] Insider Trading API returned non-array response:', rawData);
+        throw new MarketEventsAPIError(
+          `Insider Trading API returned invalid response: ${JSON.stringify(rawData)}`
+        );
+      }
+
+      // Filter and map: 최근 30일, 매수(A)와 매도(D) 모두, price > 0 (실제 거래)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const trades: InsiderTrading[] = rawData
+        .filter((item) => {
+          const transactionDate = new Date(item.transactionDate);
+          return (
+            (item.acquistionOrDisposition === 'A' || item.acquistionOrDisposition === 'D') && // 매수와 매도 모두
+            item.price > 0 && // 실제 거래 가격이 있는 경우만
+            transactionDate >= thirtyDaysAgo && // 최근 30일
+            (item.typeOfOwner.toLowerCase().includes('officer') || // 임원
+              item.typeOfOwner.toLowerCase().includes('director') || // 이사
+              item.typeOfOwner.toLowerCase().includes('ceo') ||
+              item.typeOfOwner.toLowerCase().includes('cfo'))
+          );
+        })
+        .map((item) => ({
+          symbol: item.symbol,
+          reportingName: item.reportingName,
+          typeOfOwner: item.typeOfOwner,
+          transactionType: item.transactionType,
+          acquistionOrDisposition: item.acquistionOrDisposition,
+          securitiesTransacted: item.securitiesTransacted,
+          price: item.price,
+          securitiesOwned: item.securitiesOwned,
+          transactionDate: item.transactionDate,
+          filingDate: item.filingDate,
+          link: item.link,
+        }));
+
+      // Update cache
+      this.insiderTradingCache = {
+        data: trades,
+        timestamp: new Date(),
+      };
+
+      return options?.limit ? trades.slice(0, options.limit) : trades;
+    } catch (error) {
+      console.error('[MarketEvents] Failed to fetch insider trading:', error);
+      return this.insiderTradingCache?.data || [];
+    }
+  }
+
+  // ========================================
+  // 7. Market Movers (Alpha Vantage)
   // ========================================
 
   /**
@@ -546,6 +625,7 @@ class MarketEventsService {
       analystRatings,
       upcomingEarnings,
       stockSplits,
+      insiderTrading,
       marketMovers,
     ] = await Promise.all([
       this.getSenateTrading({ limit }),
@@ -553,6 +633,7 @@ class MarketEventsService {
       this.getAnalystRatings({ limit }),
       this.getUpcomingEarnings({ ...options, limit }),
       this.getStockSplits({ ...options, limit }),
+      this.getInsiderTrading({ limit }),
       this.getMarketMovers({ limit }),
     ]);
 
@@ -564,16 +645,18 @@ class MarketEventsService {
       analystRatings,
       upcomingEarnings,
       stockSplits,
+      insiderTrading,
       marketMovers,
       metadata: {
         fetchedAt: new Date().toISOString(),
-        categories: 6,
+        categories: 7,
         cacheStatus: {
           senateTrading: this.isCacheValid(this.senateTradingCache),
           mergersAcquisitions: this.isCacheValid(this.mergersCache),
           ratingChanges: this.isCacheValid(this.ratingsCache),
           earnings: this.isCacheValid(this.earningsCache),
           stockSplits: this.isCacheValid(this.splitsCache),
+          insiderTrading: this.isCacheValid(this.insiderTradingCache),
           marketMovers: this.isCacheValid(this.marketMoversCache),
         },
       },
@@ -589,6 +672,7 @@ class MarketEventsService {
     this.ratingsCache = null;
     this.earningsCache = null;
     this.splitsCache = null;
+    this.insiderTradingCache = null;
     this.marketMoversCache = null;
     console.log('[MarketEvents] All caches cleared');
   }

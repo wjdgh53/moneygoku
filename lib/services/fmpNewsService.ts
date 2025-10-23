@@ -305,8 +305,15 @@ class FMPNewsService {
         page: '0',
       });
 
-      // Limit results
-      const trades = Array.isArray(rawData) ? rawData.slice(0, limit) : [];
+      // Filter for last 30 days and limit results
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const trades = Array.isArray(rawData)
+        ? rawData
+            .filter(trade => new Date(trade.filingDate) >= thirtyDaysAgo)
+            .slice(0, limit)
+        : [];
 
       // Update cache
       this.insiderTradesCache.set(cacheKey, {

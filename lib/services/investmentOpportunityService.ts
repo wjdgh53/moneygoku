@@ -20,6 +20,9 @@ import {
   UpcomingEarnings,
 } from '@/lib/types/marketEvents';
 import { generateText, GPT_MODELS } from '@/lib/utils/openai';
+import { calculateInsiderBuyingScore } from '@/lib/utils/insiderScoringAlgorithm';
+import { generateInvestmentAnalysis } from '@/lib/services/aiInvestmentAnalysis';
+import { momentumScreenerService } from '@/lib/services/momentumScreenerService';
 
 /**
  * 캐시 인터페이스
@@ -34,6 +37,20 @@ interface OpportunityCache {
  * 캐시 TTL (5분)
  */
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * 시그널 타입별 Half-Life (일 단위)
+ * 시간이 지남에 따라 시그널의 가치가 감소하는 속도를 정의
+ */
+const SIGNAL_HALF_LIFE_DAYS: Record<SignalType, number> = {
+  insider_buying: 60,         // 2개월 (장기 신호)
+  analyst_upgrade: 30,        // 1개월 후 50% 가치
+  merger_acquisition: 14,     // 2주 (빠르게 프라이싱됨)
+  top_gainer: 3,              // 3일 (단기 모멘텀)
+  stock_split: 21,            // 3주
+  earnings_upcoming: 7,       // 1주일
+  high_volume: 1,             // 당일만 유효
+};
 
 /**
  * 인메모리 캐시
@@ -67,10 +84,10 @@ class InvestmentOpportunityService {
    * @param useCache - 캐시 사용 여부 (기본: true)
    * @returns 투자 기회 목록
    */
-  analyzeMarketEvents(
+  async analyzeMarketEvents(
     marketEvents: MarketEventsResponse,
     useCache: boolean = true
-  ): InvestmentOpportunity[] {
+  ): Promise<InvestmentOpportunity[]> {
     // 캐시 확인
     if (useCache && opportunityCache && Date.now() < opportunityCache.expiresAt) {
       console.log('[InvestmentOpportunity] Using cached data');
@@ -80,7 +97,7 @@ class InvestmentOpportunityService {
     console.log('[InvestmentOpportunity] Analyzing market events...');
 
     // 1. 종목별 시그널 수집
-    const symbolSignals = this.collectSignals(marketEvents);
+    const symbolSignals = await this.collectSignals(marketEvents);
 
     // 2. 종목별 가격 정보 수집
     const symbolInfo = this.collectStockInfo(marketEvents);
@@ -108,7 +125,7 @@ class InvestmentOpportunityService {
   /**
    * Market Events에서 종목별 시그널 수집
    */
-  private collectSignals(marketEvents: MarketEventsResponse): SymbolSignalsMap {
+  private async collectSignals(marketEvents: MarketEventsResponse): Promise<SymbolSignalsMap> {
     const signalsMap: SymbolSignalsMap = new Map();
 
     // Helper: 시그널 추가
@@ -152,8 +169,8 @@ class InvestmentOpportunityService {
       });
     });
 
-    // 3. Top Gainers (상위 10개)
-    const topGainers = marketEvents.marketMovers.topGainers.slice(0, 10);
+    // 3. Top Gainers (상위 30개로 확대 - 교집합 확률 증가)
+    const topGainers = marketEvents.marketMovers.topGainers.slice(0, 30);
     topGainers.forEach((gainer) => {
       addSignal(gainer.symbol, {
         type: 'top_gainer',
@@ -217,8 +234,8 @@ class InvestmentOpportunityService {
       }
     });
 
-    // 6. Most Active (상위 10개)
-    const mostActive = marketEvents.marketMovers.mostActive.slice(0, 10);
+    // 6. Most Active (상위 30개로 확대 - 교집합 확률 증가)
+    const mostActive = marketEvents.marketMovers.mostActive.slice(0, 30);
     mostActive.forEach((active) => {
       addSignal(active.symbol, {
         type: 'high_volume',
@@ -232,6 +249,127 @@ class InvestmentOpportunityService {
         },
       });
     });
+
+    // 7. Insider Trading (내부자 매수/매도)
+    // 같은 사람이 같은 종목을 여러 번 거래한 경우 중복 제거 (가장 큰 거래량만 선택)
+    // 매수와 매도를 별도로 처리
+    const insiderBuyingMap = new Map<string, typeof marketEvents.insiderTrading[0]>();
+    const insiderSellingMap = new Map<string, typeof marketEvents.insiderTrading[0]>();
+
+    marketEvents.insiderTrading.forEach((insider) => {
+      const key = `${insider.reportingName}-${insider.symbol}`;
+
+      if (insider.acquistionOrDisposition === 'A') {
+        // 매수 (Acquisition)
+        const existing = insiderBuyingMap.get(key);
+        if (!existing || insider.securitiesTransacted > existing.securitiesTransacted) {
+          insiderBuyingMap.set(key, insider);
+        }
+      } else if (insider.acquistionOrDisposition === 'D') {
+        // 매도 (Disposition)
+        const existing = insiderSellingMap.get(key);
+        if (!existing || insider.securitiesTransacted > existing.securitiesTransacted) {
+          insiderSellingMap.set(key, insider);
+        }
+      }
+    });
+
+    // 7a. Insider Buying (매수)
+    insiderBuyingMap.forEach((insider) => {
+      const sharesBought = insider.securitiesTransacted.toLocaleString();
+      const totalValue = (insider.securitiesTransacted * insider.price).toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 0,
+      });
+
+      // Dynamic scoring based on transaction size, owner role, and conviction
+      const dynamicScore = calculateInsiderBuyingScore({
+        securitiesTransacted: insider.securitiesTransacted,
+        pricePerShare: insider.price,
+        typeOfOwner: insider.typeOfOwner,
+        securitiesOwned: insider.securitiesOwned,
+        transactionDate: insider.transactionDate,
+      });
+
+      addSignal(insider.symbol, {
+        type: 'insider_buying',
+        score: dynamicScore,
+        source: 'FMP',
+        description: `${insider.reportingName} bought ${sharesBought} shares (${totalValue})`,
+        date: insider.transactionDate,
+        metadata: {
+          reportingName: insider.reportingName,
+          typeOfOwner: insider.typeOfOwner,
+          securitiesTransacted: insider.securitiesTransacted,
+          price: insider.price,
+          securitiesOwned: insider.securitiesOwned,
+          link: insider.link,
+        },
+      });
+    });
+
+    // 7b. Insider Selling (매도) - 부정적 신호
+    insiderSellingMap.forEach((insider) => {
+      const sharesSold = insider.securitiesTransacted.toLocaleString();
+      const totalValue = (insider.securitiesTransacted * insider.price).toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 0,
+      });
+
+      // Use same scoring algorithm but make it negative
+      const buyingScore = calculateInsiderBuyingScore({
+        securitiesTransacted: insider.securitiesTransacted,
+        pricePerShare: insider.price,
+        typeOfOwner: insider.typeOfOwner,
+        securitiesOwned: insider.securitiesOwned,
+        transactionDate: insider.transactionDate,
+      });
+      const sellingScore = -buyingScore; // 매도는 음수
+
+      addSignal(insider.symbol, {
+        type: 'insider_selling',
+        score: sellingScore,
+        source: 'FMP',
+        description: `${insider.reportingName} sold ${sharesSold} shares (${totalValue})`,
+        date: insider.transactionDate,
+        metadata: {
+          reportingName: insider.reportingName,
+          typeOfOwner: insider.typeOfOwner,
+          securitiesTransacted: insider.securitiesTransacted,
+          price: insider.price,
+          securitiesOwned: insider.securitiesOwned,
+          link: insider.link,
+        },
+      });
+    });
+
+    // 8. Momentum Stocks (복합 모멘텀 시그널)
+    // 거래량 급증 + 가격 상승 + 강한 RSI 조건 충족 종목
+    try {
+      const momentumStocks = await momentumScreenerService.getMomentumStocks();
+
+      momentumStocks.forEach((symbol) => {
+        addSignal(symbol, {
+          type: 'momentum',
+          score: SIGNAL_SCORES.momentum,
+          source: 'Hybrid (AV + FMP)',
+          description: 'High momentum: Volume spike + Price surge + Strong fundamentals',
+          date: new Date().toISOString(),
+          metadata: {
+            criteria: 'Volume > 200% avg, Price change > 3%, MarketCap > $1B, RSI < 80',
+          },
+        });
+      });
+
+      if (momentumStocks.length > 0) {
+        console.log(`[InvestmentOpportunity] Added ${momentumStocks.length} momentum signals`);
+      }
+    } catch (error) {
+      console.error('[InvestmentOpportunity] Failed to get momentum stocks:', error);
+      // Continue without momentum signals
+    }
 
     return signalsMap;
   }
@@ -296,8 +434,8 @@ class InvestmentOpportunityService {
     const opportunities: InvestmentOpportunity[] = [];
 
     symbolSignals.forEach((signals, symbol) => {
-      // 총 점수 계산
-      const totalScore = signals.reduce((sum, signal) => sum + signal.score, 0);
+      // 총 점수 계산 (시간 감쇠 + 중복 감점 + 다양성 보너스 적용)
+      const totalScore = this.calculateTotalScore(signals);
 
       // 가격 정보 가져오기
       const info = symbolInfo.get(symbol);
@@ -316,6 +454,61 @@ class InvestmentOpportunityService {
     });
 
     return opportunities;
+  }
+
+  /**
+   * 총 점수 계산 (중복 시그널 감점 + 시간 감쇠 + 다양성 보너스)
+   *
+   * 개선 사항:
+   * 1. 중복 시그널 감점: 같은 타입 2번째 50%, 3번째 25%
+   * 2. 다양성 보너스: 2개 타입 +3점, 3개+ 타입 +5점
+   */
+  private calculateTotalScore(signals: Signal[]): number {
+    // 1. 시그널 타입별로 그룹화
+    const signalsByType = new Map<SignalType, Signal[]>();
+    signals.forEach(signal => {
+      if (!signalsByType.has(signal.type)) {
+        signalsByType.set(signal.type, []);
+      }
+      signalsByType.get(signal.type)!.push(signal);
+    });
+
+    // 2. 각 타입별로 점수 계산 (중복 감점 + 시간 감쇠 적용)
+    let baseScore = 0;
+    signalsByType.forEach((typeSignals, signalType) => {
+      // 시그널을 점수 기준 내림차순 정렬 (큰 것부터 처리)
+      const sortedSignals = [...typeSignals].sort((a, b) => b.score - a.score);
+
+      sortedSignals.forEach((signal, index) => {
+        // 시간 감쇠 적용
+        const decayFactor = this.getDecayFactor(signal);
+        const decayedScore = signal.score * decayFactor;
+
+        // 중복 감점 적용
+        let duplicatePenalty = 1.0;
+        if (index === 1) {
+          duplicatePenalty = 0.5;  // 2번째: 50%
+        } else if (index === 2) {
+          duplicatePenalty = 0.25; // 3번째: 25%
+        } else if (index >= 3) {
+          duplicatePenalty = 0.1;  // 4번째 이상: 10%
+        }
+
+        baseScore += decayedScore * duplicatePenalty;
+      });
+    });
+
+    // 3. 시그널 다양성 보너스
+    const uniqueSignalTypes = signalsByType.size;
+    let diversityBonus = 0;
+    if (uniqueSignalTypes >= 3) {
+      diversityBonus = 5;  // 3개 이상 타입: +5점
+    } else if (uniqueSignalTypes === 2) {
+      diversityBonus = 3;  // 2개 타입: +3점
+    }
+    // 1개 타입: +0점 (보너스 없음)
+
+    return baseScore + diversityBonus;
   }
 
   /**
@@ -362,6 +555,27 @@ class InvestmentOpportunityService {
   }
 
   /**
+   * 시그널의 시간 감쇠 계수 계산
+   * Exponential decay: e^(-ln(2) * t / t_half)
+   */
+  private getDecayFactor(signal: Signal): number {
+    try {
+      const signalDate = new Date(signal.date);
+      const now = new Date();
+      const daysSince = Math.max(0, (now.getTime() - signalDate.getTime()) / (1000 * 60 * 60 * 24));
+      const halfLife = SIGNAL_HALF_LIFE_DAYS[signal.type];
+
+      // Exponential decay function
+      const decayFactor = Math.exp(-0.693 * daysSince / halfLife);
+
+      return decayFactor;
+    } catch (error) {
+      // 날짜 파싱 실패 시 최대 감쇠 적용
+      return 0.5;
+    }
+  }
+
+  /**
    * 거래량을 읽기 쉬운 형식으로 변환
    */
   private formatVolume(volume: number): string {
@@ -376,50 +590,16 @@ class InvestmentOpportunityService {
   }
 
   /**
-   * AI 요약 생성
+   * AI 요약 생성 (Enhanced with sophisticated analysis)
    *
    * @param opportunity - 투자 기회 객체
-   * @returns AI 생성 투자 논리 요약 (2-3문장)
+   * @returns AI 생성 투자 논리 요약 (3-4문장, 기회+리스크)
    */
   async generateAISummary(
     opportunity: InvestmentOpportunity
   ): Promise<string> {
     try {
-      // 시그널 정보를 텍스트로 변환
-      const signalsDescription = opportunity.signals
-        .map((signal) => {
-          const typeDesc = SIGNAL_DESCRIPTIONS[signal.type];
-          return `- ${typeDesc}: ${signal.description} (Source: ${signal.source})`;
-        })
-        .join('\n');
-
-      // 가격 정보
-      const priceInfo = opportunity.price
-        ? `Current price: $${opportunity.price.toFixed(2)}, Change: ${opportunity.changePercent?.toFixed(2)}%`
-        : 'Price information not available';
-
-      // 프롬프트 생성 (한국어)
-      const prompt = `이 투자 기회를 분석하고, 왜 이 주식이 투자할 가치가 있는지 2-3문장으로 간결하게 요약해주세요. 시그널을 기반으로 한 투자 논리에 집중하세요.
-
-종목: ${opportunity.symbol}${opportunity.companyName ? ` (${opportunity.companyName})` : ''}
-점수: ${opportunity.totalScore}점
-${priceInfo}
-
-시그널:
-${signalsDescription}
-
-전문적이고 객관적인 요약을 작성하되, 이 주식이 유망한 핵심 이유를 강조하세요. 불릿 포인트를 사용하지 말고, 100단어 이내로 작성하세요. 반드시 한국어로 답변하세요.`;
-
-      const systemPrompt = `당신은 전문 투자 애널리스트입니다. 시장 시그널을 기반으로 명확하고 간결한 투자 요약을 한국어로 제공하세요. 객관적이고 사실에 기반해야 합니다.`;
-
-      const summary = await generateText(prompt, {
-        model: GPT_MODELS.GPT4_O_MINI,
-        temperature: 0.5, // 더 일관된 결과를 위해 낮은 temperature
-        maxTokens: 200,
-        systemPrompt,
-      });
-
-      return summary.trim();
+      return await generateInvestmentAnalysis(opportunity);
     } catch (error) {
       console.error(
         `[InvestmentOpportunity] Failed to generate AI summary for ${opportunity.symbol}:`,

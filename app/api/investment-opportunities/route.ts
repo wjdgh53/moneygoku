@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
 
     // 2. 투자 기회 분석
     const useCache = !forceRefresh;
-    const allOpportunities = investmentOpportunityService.analyzeMarketEvents(
+    const allOpportunities = await investmentOpportunityService.analyzeMarketEvents(
       marketEvents,
       useCache
     );

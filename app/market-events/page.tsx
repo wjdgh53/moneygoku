@@ -13,6 +13,7 @@ import MergersCard from '@/components/market-events/MergersCard';
 import RatingChangesCard from '@/components/market-events/RatingChangesCard';
 import EarningsCard from '@/components/market-events/EarningsCard';
 import StockSplitsCard from '@/components/market-events/StockSplitsCard';
+import InsiderTradingCard from '@/components/market-events/InsiderTradingCard';
 import MarketMoversCard from '@/components/market-events/MarketMoversCard';
 import { MarketEventsResponse } from '@/lib/types/marketEvents';
 
@@ -46,13 +47,6 @@ export default function MarketEventsPage() {
 
   useEffect(() => {
     fetchMarketEvents();
-
-    // Auto-refresh every 5 minutes
-    const intervalId = setInterval(() => {
-      fetchMarketEvents();
-    }, 5 * 60 * 1000);
-
-    return () => clearInterval(intervalId);
   }, []);
 
   const handleRefresh = () => {
@@ -158,6 +152,7 @@ export default function MarketEventsPage() {
               <RatingChangesCard ratings={data.analystRatings} />
               <EarningsCard earnings={data.upcomingEarnings} />
               <StockSplitsCard splits={data.stockSplits} />
+              <InsiderTradingCard trades={data.insiderTrading} />
               <MarketMoversCard movers={data.marketMovers} />
             </div>
           </>

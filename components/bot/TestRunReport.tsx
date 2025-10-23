@@ -369,7 +369,7 @@ export default function TestRunReport({ report, isRunning = false, show = true, 
                               }`}>
                                 {(report.aiDecision.objectiveScore as any).news >= 0 ? '+' : ''}{(report.aiDecision.objectiveScore as any).news.toFixed(2)}
                               </span>
-                              <span className="ml-2 text-xs text-gray-500">(가중치 60%)</span>
+                              <span className="ml-2 text-xs text-gray-500">(가중치 70%)</span>
                             </div>
                           </div>
                         )}
@@ -386,7 +386,7 @@ export default function TestRunReport({ report, isRunning = false, show = true, 
                               }`}>
                                 {(report.aiDecision.objectiveScore as any).technical >= 0 ? '+' : ''}{(report.aiDecision.objectiveScore as any).technical.toFixed(2)}
                               </span>
-                              <span className="ml-2 text-xs text-gray-500">(가중치 40%)</span>
+                              <span className="ml-2 text-xs text-gray-500">(가중치 30%)</span>
                             </div>
                           </div>
                         )}

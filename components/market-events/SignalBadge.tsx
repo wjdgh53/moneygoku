@@ -14,6 +14,16 @@ interface SignalBadgeProps {
 
 // Color mapping for each signal type
 const SIGNAL_COLORS: Record<SignalType, { bg: string; text: string; border: string }> = {
+  momentum: {
+    bg: 'bg-pink-100',
+    text: 'text-pink-700',
+    border: 'border-pink-300',
+  },
+  insider_buying: {
+    bg: 'bg-indigo-100',
+    text: 'text-indigo-700',
+    border: 'border-indigo-300',
+  },
   analyst_upgrade: {
     bg: 'bg-purple-100',
     text: 'text-purple-700',
@@ -48,9 +58,11 @@ const SIGNAL_COLORS: Record<SignalType, { bg: string; text: string; border: stri
 
 // Icon mapping for each signal type
 const SIGNAL_ICONS: Record<SignalType, string> = {
+  momentum: '🚀',
+  insider_buying: '💼',
   analyst_upgrade: '📈',
   merger_acquisition: '🤝',
-  top_gainer: '🚀',
+  top_gainer: '⬆️',
   stock_split: '✂️',
   earnings_upcoming: '📊',
   high_volume: '📢',
@@ -58,6 +70,8 @@ const SIGNAL_ICONS: Record<SignalType, string> = {
 
 // Display names for signal types
 const SIGNAL_NAMES: Record<SignalType, string> = {
+  momentum: 'Momentum',
+  insider_buying: 'Insider Buying',
   analyst_upgrade: 'Analyst Upgrade',
   merger_acquisition: 'M&A',
   top_gainer: 'Top Gainer',

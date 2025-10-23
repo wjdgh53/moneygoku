@@ -181,6 +181,45 @@ export interface MarketMovers {
 }
 
 // ========================================
+// 7. Insider Trading (내부자 거래)
+// ========================================
+
+export interface InsiderTrading {
+  /** Stock symbol */
+  symbol: string;
+
+  /** Name of the insider */
+  reportingName: string;
+
+  /** Type of owner (e.g., "officer: CEO", "director") */
+  typeOfOwner: string;
+
+  /** Transaction type (e.g., "P-Purchase", "S-Sale", "M-Exempt") */
+  transactionType: string;
+
+  /** Acquisition or Disposition (A = Buy, D = Sell) */
+  acquistionOrDisposition: 'A' | 'D';
+
+  /** Number of securities transacted */
+  securitiesTransacted: number;
+
+  /** Price per share */
+  price: number;
+
+  /** Total securities owned after transaction */
+  securitiesOwned: number;
+
+  /** Transaction date (ISO format) */
+  transactionDate: string;
+
+  /** Filing date (ISO format) */
+  filingDate: string;
+
+  /** SEC filing link */
+  link: string;
+}
+
+// ========================================
 // API Response Types
 // ========================================
 
@@ -191,6 +230,7 @@ export interface MarketEventsResponse {
   analystRatings: AnalystRating[];
   upcomingEarnings: UpcomingEarnings[];
   stockSplits: StockSplit[];
+  insiderTrading: InsiderTrading[];
   marketMovers: MarketMovers;
   metadata: {
     fetchedAt: string;
@@ -201,6 +241,7 @@ export interface MarketEventsResponse {
       ratingChanges: boolean;
       earnings: boolean;
       stockSplits: boolean;
+      insiderTrading: boolean;
       marketMovers: boolean;
     };
   };
@@ -288,6 +329,25 @@ export interface FMPStockSplitResponse {
   symbol: string;
   numerator: number;
   denominator: number;
+}
+
+/** FMP Insider Trading response */
+export interface FMPInsiderTradingResponse {
+  symbol: string;
+  filingDate: string;
+  transactionDate: string;
+  reportingCik: string;
+  transactionType: string;
+  securitiesOwned: number;
+  companyCik: string;
+  reportingName: string;
+  typeOfOwner: string;
+  acquistionOrDisposition: 'A' | 'D';
+  formType: string;
+  securitiesTransacted: number;
+  price: number;
+  securityName: string;
+  link: string;
 }
 
 // ========================================

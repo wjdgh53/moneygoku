@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { InvestmentOpportunity, InvestmentOpportunityResponse } from '@/lib/types/investmentOpportunity';
 import InvestmentOpportunityCard from './InvestmentOpportunityCard';
+import InvestmentReportModal from './InvestmentReportModal';
 
 interface FilterOptions {
   minScore: number;
@@ -20,6 +21,7 @@ export default function InvestmentOpportunitiesSection() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [showFilters, setShowFilters] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
   const [filters, setFilters] = useState<FilterOptions>({
     minScore: 2,
     limit: 12,
@@ -58,15 +60,6 @@ export default function InvestmentOpportunitiesSection() {
   // Initial fetch
   useEffect(() => {
     fetchOpportunities();
-  }, [fetchOpportunities]);
-
-  // Auto-refresh every 5 minutes
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      fetchOpportunities();
-    }, 5 * 60 * 1000);
-
-    return () => clearInterval(intervalId);
   }, [fetchOpportunities]);
 
   // Manual refresh
@@ -303,12 +296,46 @@ export default function InvestmentOpportunitiesSection() {
         </div>
       )}
 
-      {/* Results Count */}
+      {/* Results Count & Report Button */}
       {!loading && !error && opportunities.length > 0 && (
-        <div className="mt-6 text-center text-sm text-gray-600">
-          Showing {opportunities.length} investment opportunit{opportunities.length === 1 ? 'y' : 'ies'}
+        <div className="mt-8 space-y-4">
+          <div className="text-center">
+            <button
+              onClick={() => setIsReportOpen(true)}
+              className="inline-flex items-center space-x-3 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-lg rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 shadow-lg hover:shadow-xl"
+              aria-label="통합 리포트 보기"
+            >
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              <span>📊 통합 리포트 보기</span>
+              <span className="bg-white/20 px-3 py-1 rounded-full text-sm">
+                {opportunities.length}개 종목
+              </span>
+            </button>
+          </div>
+          <div className="text-center text-sm text-gray-600">
+            Showing {opportunities.length} investment opportunit{opportunities.length === 1 ? 'y' : 'ies'}
+          </div>
         </div>
       )}
+
+      {/* Investment Report Modal */}
+      <InvestmentReportModal
+        opportunities={opportunities}
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+      />
 
       {/* CSS Animations */}
       <style jsx>{`

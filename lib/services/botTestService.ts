@@ -550,6 +550,7 @@ class BotTestService {
         currentPrice,
         currentPosition,
         technicalSignal: entryResult.allMet,
+        technicalConditions: entryResult.conditions,  // 🆕 개별 조건 평가 결과 전달
         newsAnalysis: report.newsAnalysis,
         fundAllocation: effectiveFundAllocation,
         stopLoss: strategy.stopLoss,
@@ -925,54 +926,60 @@ class BotTestService {
       }
     }
 
-    // MACD condition
+    // MACD condition (with null checks)
     if (conditions.macd) {
       const macdCall = apiResults.find(call => call.indicator === 'macd');
       if (macdCall && macdCall.success && typeof macdCall.result === 'object') {
-        const macdData = macdCall.result as { macdLine: number; signalLine: number; histogram: number };
-        const condition = conditions.macd;
-        let conditionMet = false;
+        const macdData = macdCall.result as { macdLine: number | null; signalLine: number | null; histogram: number | null };
 
-        if (condition.operator === 'histogram_positive') {
-          conditionMet = macdData.histogram > 0;
-        } else if (condition.operator === 'histogram_negative') {
-          conditionMet = macdData.histogram < 0;
-        } else if (condition.operator === 'bullish_crossover') {
-          conditionMet = macdData.macdLine > macdData.signalLine;
-        } else if (condition.operator === 'bearish_crossover') {
-          conditionMet = macdData.macdLine < macdData.signalLine;
-        }
+        // Check if all MACD values are valid (not null)
+        if (macdData.macdLine !== null && macdData.signalLine !== null && macdData.histogram !== null) {
+          const condition = conditions.macd;
+          let conditionMet = false;
 
-        let operatorText = '';
-        let actualText = '';
+          if (condition.operator === 'histogram_positive') {
+            conditionMet = macdData.histogram > 0;
+          } else if (condition.operator === 'histogram_negative') {
+            conditionMet = macdData.histogram < 0;
+          } else if (condition.operator === 'bullish_crossover') {
+            conditionMet = macdData.macdLine > macdData.signalLine;
+          } else if (condition.operator === 'bearish_crossover') {
+            conditionMet = macdData.macdLine < macdData.signalLine;
+          }
 
-        if (condition.operator === 'histogram_positive') {
-          operatorText = 'histogram positive';
-          actualText = `Histogram = ${macdData.histogram.toFixed(4)}`;
-        } else if (condition.operator === 'histogram_negative') {
-          operatorText = 'histogram negative';
-          actualText = `Histogram = ${macdData.histogram.toFixed(4)}`;
-        } else if (condition.operator === 'bullish_crossover') {
-          operatorText = 'bullish crossover';
-          actualText = `MACD(${macdData.macdLine.toFixed(4)}) > Signal(${macdData.signalLine.toFixed(4)})`;
-        } else if (condition.operator === 'bearish_crossover') {
-          operatorText = 'bearish crossover';
-          actualText = `MACD(${macdData.macdLine.toFixed(4)}) < Signal(${macdData.signalLine.toFixed(4)})`;
-        }
+          let operatorText = '';
+          let actualText = '';
 
-        const conditionText = `MACD ${operatorText}`;
+          if (condition.operator === 'histogram_positive') {
+            operatorText = 'histogram positive';
+            actualText = `Histogram = ${macdData.histogram.toFixed(4)}`;
+          } else if (condition.operator === 'histogram_negative') {
+            operatorText = 'histogram negative';
+            actualText = `Histogram = ${macdData.histogram.toFixed(4)}`;
+          } else if (condition.operator === 'bullish_crossover') {
+            operatorText = 'bullish crossover';
+            actualText = `MACD(${macdData.macdLine.toFixed(4)}) > Signal(${macdData.signalLine.toFixed(4)})`;
+          } else if (condition.operator === 'bearish_crossover') {
+            operatorText = 'bearish crossover';
+            actualText = `MACD(${macdData.macdLine.toFixed(4)}) < Signal(${macdData.signalLine.toFixed(4)})`;
+          }
 
-        results.push({
-          condition: conditionText,
-          actual: actualText,
-          result: conditionMet,
-          details: `MACD=${macdData.macdLine.toFixed(4)}, Signal=${macdData.signalLine.toFixed(4)}, Hist=${macdData.histogram.toFixed(4)}`
-        });
+          const conditionText = `MACD ${operatorText}`;
 
-        if (conditionMet) {
-          reasons.push(`MACD ${operatorText}`);
+          results.push({
+            condition: conditionText,
+            actual: actualText,
+            result: conditionMet,
+            details: `MACD=${macdData.macdLine.toFixed(4)}, Signal=${macdData.signalLine.toFixed(4)}, Hist=${macdData.histogram.toFixed(4)}`
+          });
+
+          if (conditionMet) {
+            reasons.push(`MACD ${operatorText}`);
+          } else {
+            failedReasons.push(`MACD ${operatorText} not met`);
+          }
         } else {
-          failedReasons.push(`MACD ${operatorText} not met`);
+          failedReasons.push('MACD data unavailable (null values)');
         }
       } else {
         failedReasons.push('MACD data unavailable');
@@ -1019,37 +1026,43 @@ class BotTestService {
     if (conditions.bollinger) {
       const bollingerCall = apiResults.find(call => call.indicator === 'bollinger');
       if (bollingerCall && bollingerCall.success && typeof bollingerCall.result === 'object') {
-        const bollingerData = bollingerCall.result as { upper: number; middle: number; lower: number };
-        const condition = conditions.bollinger;
-        let conditionMet = false;
+        const bollingerData = bollingerCall.result as { upper: number | null; middle: number | null; lower: number | null };
 
-        if (condition.operator === 'price_above_upper') {
-          conditionMet = currentPrice > bollingerData.upper;
-        } else if (condition.operator === 'price_below_lower') {
-          conditionMet = currentPrice < bollingerData.lower;
-        } else if (condition.operator === 'price_in_middle') {
-          conditionMet = currentPrice > bollingerData.lower && currentPrice < bollingerData.upper;
-        }
+        // Check if all Bollinger Band values are valid (not null)
+        if (bollingerData.upper !== null && bollingerData.middle !== null && bollingerData.lower !== null) {
+          const condition = conditions.bollinger;
+          let conditionMet = false;
 
-        let operatorText = '';
-        if (condition.operator === 'price_above_upper') operatorText = 'price above upper';
-        else if (condition.operator === 'price_below_lower') operatorText = 'price below lower';
-        else if (condition.operator === 'price_in_middle') operatorText = 'price in middle';
+          if (condition.operator === 'price_above_upper') {
+            conditionMet = currentPrice > bollingerData.upper;
+          } else if (condition.operator === 'price_below_lower') {
+            conditionMet = currentPrice < bollingerData.lower;
+          } else if (condition.operator === 'price_in_middle') {
+            conditionMet = currentPrice > bollingerData.lower && currentPrice < bollingerData.upper;
+          }
 
-        const conditionText = `Bollinger ${operatorText}`;
-        const actualText = `Price=${currentPrice}, Upper=${bollingerData.upper.toFixed(2)}, Lower=${bollingerData.lower.toFixed(2)}`;
+          let operatorText = '';
+          if (condition.operator === 'price_above_upper') operatorText = 'price above upper';
+          else if (condition.operator === 'price_below_lower') operatorText = 'price below lower';
+          else if (condition.operator === 'price_in_middle') operatorText = 'price in middle';
 
-        results.push({
-          condition: conditionText,
-          actual: actualText,
-          result: conditionMet,
-          details: `Upper=${bollingerData.upper.toFixed(2)}, Middle=${bollingerData.middle.toFixed(2)}, Lower=${bollingerData.lower.toFixed(2)}`
-        });
+          const conditionText = `Bollinger ${operatorText}`;
+          const actualText = `Price=${currentPrice}, Upper=${bollingerData.upper.toFixed(2)}, Lower=${bollingerData.lower.toFixed(2)}`;
 
-        if (conditionMet) {
-          reasons.push(`Bollinger ${operatorText}`);
+          results.push({
+            condition: conditionText,
+            actual: actualText,
+            result: conditionMet,
+            details: `Upper=${bollingerData.upper.toFixed(2)}, Middle=${bollingerData.middle.toFixed(2)}, Lower=${bollingerData.lower.toFixed(2)}`
+          });
+
+          if (conditionMet) {
+            reasons.push(`Bollinger ${operatorText}`);
+          } else {
+            failedReasons.push(`Bollinger ${operatorText} not met`);
+          }
         } else {
-          failedReasons.push(`Bollinger ${operatorText} not met`);
+          failedReasons.push('Bollinger Bands data unavailable (null values)');
         }
       } else {
         failedReasons.push('Bollinger Bands data unavailable');
@@ -1060,44 +1073,50 @@ class BotTestService {
     if (conditions.stochastic) {
       const stochasticCall = apiResults.find(call => call.indicator === 'stochastic');
       if (stochasticCall && stochasticCall.success && typeof stochasticCall.result === 'object') {
-        const stochasticData = stochasticCall.result as { slowK: number; slowD: number };
-        const condition = conditions.stochastic;
-        let conditionMet = false;
+        const stochasticData = stochasticCall.result as { slowK: number | null; slowD: number | null };
 
-        if (condition.operator === 'oversold') {
-          // Oversold when %K < 20
-          conditionMet = stochasticData.slowK < (condition.kValue || 20);
-        } else if (condition.operator === 'overbought') {
-          // Overbought when %K > 80
-          conditionMet = stochasticData.slowK > (condition.kValue || 80);
-        } else if (condition.operator === 'bullish_cross') {
-          // %K crosses above %D
-          conditionMet = stochasticData.slowK > stochasticData.slowD;
-        } else if (condition.operator === 'bearish_cross') {
-          // %K crosses below %D
-          conditionMet = stochasticData.slowK < stochasticData.slowD;
-        }
+        // Check if all Stochastic values are valid (not null)
+        if (stochasticData.slowK !== null && stochasticData.slowD !== null) {
+          const condition = conditions.stochastic;
+          let conditionMet = false;
 
-        let operatorText = '';
-        if (condition.operator === 'oversold') operatorText = 'oversold';
-        else if (condition.operator === 'overbought') operatorText = 'overbought';
-        else if (condition.operator === 'bullish_cross') operatorText = 'bullish cross';
-        else if (condition.operator === 'bearish_cross') operatorText = 'bearish cross';
+          if (condition.operator === 'oversold') {
+            // Oversold when %K < 20
+            conditionMet = stochasticData.slowK < (condition.kValue || 20);
+          } else if (condition.operator === 'overbought') {
+            // Overbought when %K > 80
+            conditionMet = stochasticData.slowK > (condition.kValue || 80);
+          } else if (condition.operator === 'bullish_cross') {
+            // %K crosses above %D
+            conditionMet = stochasticData.slowK > stochasticData.slowD;
+          } else if (condition.operator === 'bearish_cross') {
+            // %K crosses below %D
+            conditionMet = stochasticData.slowK < stochasticData.slowD;
+          }
 
-        const conditionText = `Stochastic ${operatorText}`;
-        const actualText = `%K=${stochasticData.slowK.toFixed(2)}, %D=${stochasticData.slowD.toFixed(2)}`;
+          let operatorText = '';
+          if (condition.operator === 'oversold') operatorText = 'oversold';
+          else if (condition.operator === 'overbought') operatorText = 'overbought';
+          else if (condition.operator === 'bullish_cross') operatorText = 'bullish cross';
+          else if (condition.operator === 'bearish_cross') operatorText = 'bearish cross';
 
-        results.push({
-          condition: conditionText,
-          actual: actualText,
-          result: conditionMet,
-          details: `SlowK=${stochasticData.slowK.toFixed(2)}, SlowD=${stochasticData.slowD.toFixed(2)}`
-        });
+          const conditionText = `Stochastic ${operatorText}`;
+          const actualText = `%K=${stochasticData.slowK.toFixed(2)}, %D=${stochasticData.slowD.toFixed(2)}`;
 
-        if (conditionMet) {
-          reasons.push(`Stochastic ${operatorText}`);
+          results.push({
+            condition: conditionText,
+            actual: actualText,
+            result: conditionMet,
+            details: `SlowK=${stochasticData.slowK.toFixed(2)}, SlowD=${stochasticData.slowD.toFixed(2)}`
+          });
+
+          if (conditionMet) {
+            reasons.push(`Stochastic ${operatorText}`);
+          } else {
+            failedReasons.push(`Stochastic ${operatorText} not met`);
+          }
         } else {
-          failedReasons.push(`Stochastic ${operatorText} not met`);
+          failedReasons.push('Stochastic data unavailable (null values)');
         }
       } else {
         failedReasons.push('Stochastic data unavailable');

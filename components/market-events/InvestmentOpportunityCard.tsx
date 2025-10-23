@@ -5,7 +5,7 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { InvestmentOpportunity } from '@/lib/types/investmentOpportunity';
 import SignalBadge from './SignalBadge';
 
@@ -46,7 +46,6 @@ const getRankBadgeStyle = (rank: number) => {
 export default function InvestmentOpportunityCard({
   opportunity,
 }: InvestmentOpportunityCardProps) {
-  const [showFullSummary, setShowFullSummary] = useState(false);
   const rankStyle = getRankBadgeStyle(opportunity.rank);
 
   // Format price
@@ -75,12 +74,6 @@ export default function InvestmentOpportunityCard({
     );
   };
 
-  // Truncate AI summary for preview
-  const truncateText = (text: string, maxLength: number) => {
-    if (text.length <= maxLength) return text;
-    return text.substring(0, maxLength) + '...';
-  };
-
   return (
     <div
       className="bg-white rounded-xl shadow-md overflow-hidden transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl border border-gray-100"
@@ -95,7 +88,7 @@ export default function InvestmentOpportunityCard({
             <span className="font-bold text-lg">{rankStyle.label} Place</span>
           </div>
           <div className="text-white text-sm font-medium">
-            Score: {opportunity.totalScore}
+            Score: {opportunity.totalScore.toFixed(2)}
           </div>
         </div>
       </div>
@@ -123,7 +116,7 @@ export default function InvestmentOpportunityCard({
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 text-center">
           <div className="text-sm text-gray-600 font-medium mb-1">Investment Score</div>
           <div className="text-5xl font-extrabold text-green-600">
-            {opportunity.totalScore}
+            {opportunity.totalScore.toFixed(2)}
           </div>
           <div className="text-xs text-gray-500 mt-1">
             Based on {opportunity.signals.length} signal{opportunity.signals.length > 1 ? 's' : ''}
@@ -140,48 +133,12 @@ export default function InvestmentOpportunityCard({
           </div>
         </div>
 
-        {/* AI Summary */}
-        {opportunity.aiSummary && (
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-semibold text-blue-900 flex items-center space-x-2">
-                <span>🤖</span>
-                <span>AI Investment Thesis</span>
-              </div>
-              <button
-                onClick={() => setShowFullSummary(!showFullSummary)}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
-                aria-label={showFullSummary ? 'Show less' : 'Show more'}
-              >
-                {showFullSummary ? 'Show less' : 'Show more'}
-              </button>
-            </div>
-            <p className="text-sm text-gray-700 leading-relaxed">
-              {showFullSummary
-                ? opportunity.aiSummary
-                : truncateText(opportunity.aiSummary, 150)}
-            </p>
-          </div>
-        )}
-
         {/* Volume */}
         {opportunity.volume && (
           <div className="text-xs text-gray-500">
             Volume: {new Intl.NumberFormat('en-US').format(opportunity.volume)}
           </div>
         )}
-
-        {/* View Details Button */}
-        <button
-          className="w-full py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 transform hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          onClick={() => {
-            // TODO: Navigate to stock detail page or open modal
-            console.log('View details for', opportunity.symbol);
-          }}
-          aria-label={`View detailed information for ${opportunity.symbol}`}
-        >
-          View Details →
-        </button>
       </div>
     </div>
   );

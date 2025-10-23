@@ -9,12 +9,15 @@
  * 각 시그널은 특정 점수를 가지며, 여러 시그널의 조합으로 투자 기회를 평가
  */
 export type SignalType =
+  | 'momentum'           // 모멘텀 종목 (+10점) - 거래량+가격+RSI 복합 신호
+  | 'insider_buying'     // 내부자 매수 (+5점) - 가장 강력한 신호
+  | 'insider_selling'    // 내부자 매도 (-5점) - 부정적 신호
   | 'analyst_upgrade'    // 애널리스트 Buy 추천 (+3점)
   | 'merger_acquisition' // M&A 관련 (+2점)
   | 'top_gainer'         // 급등주 (+2점)
-  | 'stock_split'        // 주식 분할 (+1점)
+  | 'stock_split'        // 주식 분할 (0점 - 제거 고려)
   | 'earnings_upcoming'  // 실적 발표 임박 (+1점)
-  | 'high_volume';       // 거래량 급증 (+1점)
+  | 'high_volume';       // 거래량 급증 (+0.5점)
 
 /**
  * 개별 시그널 정보
@@ -95,21 +98,30 @@ export interface InvestmentOpportunityResponse {
 }
 
 /**
- * 스코어링 설정
+ * 스코어링 설정 (퀀트 분석 기반 조정)
+ * - insider_buying: 5 (신규 추가 - 가장 강력한 예측 시그널)
+ * - high_volume: 1 → 0.5 (방향성 없음, 단독 의미 약함)
+ * - stock_split: 1 → 0 (정보 가치 없음, cosmetic event)
  */
 export const SIGNAL_SCORES: Record<SignalType, number> = {
-  analyst_upgrade: 3,
-  merger_acquisition: 2,
-  top_gainer: 2,
-  stock_split: 1,
-  earnings_upcoming: 1,
-  high_volume: 1,
+  momentum: 11,             // 복합 모멘텀 시그널 (거래량+가격+RSI) - 상향 조정
+  insider_buying: 5,        // 동적 스코어링으로 대체 (0.9-12.0) - 이 값은 사용 안 됨
+  insider_selling: -5,      // 내부자 매도 - 부정적 신호 (동적 스코어링: -0.9~-12.0)
+  analyst_upgrade: 9,       // 애널리스트 추천 - 상향 조정 (균형 개선)
+  merger_acquisition: 2,    // M&A 활동 - 중간 신호
+  top_gainer: 2,            // 단기 모멘텀
+  stock_split: 0,           // 정보 가치 낮음
+  earnings_upcoming: 1,     // 실적 발표 임박
+  high_volume: 0.5,         // 방향성 없음, 단독 의미 약함
 };
 
 /**
  * 시그널 타입별 설명
  */
 export const SIGNAL_DESCRIPTIONS: Record<SignalType, string> = {
+  momentum: 'High Momentum Stock',
+  insider_buying: 'Insider Buying Activity',
+  insider_selling: 'Insider Selling Activity',
   analyst_upgrade: 'Analyst Buy/Upgrade Recommendation',
   merger_acquisition: 'Merger & Acquisition Activity',
   top_gainer: 'Top Market Gainer',

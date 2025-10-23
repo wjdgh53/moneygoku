@@ -114,15 +114,34 @@ async function parseCriticalEvents(
       } else if (matchingPress) {
         eventContent = matchingPress.title;
       } else {
-        // Try to get AI summary from SEC document
+        // Try to get AI summary from SEC document with sentiment analysis
         try {
-          const aiSummary = await secDocumentSummaryService.getSummary(
+          const secSummary = await secDocumentSummaryService.getSummary(
             filing.link,
             symbol,
             filing.type,
             filingDate
           );
-          eventContent = aiSummary || getFilingTypeLabel(filing.type);
+
+          if (secSummary) {
+            // Get sentiment emoji
+            const sentimentEmoji = getSentimentEmoji(secSummary.sentiment);
+
+            // Format: emoji + summary + impact
+            eventContent = `${secSummary.summary} - ${secSummary.impact}`;
+
+            // For financial reports, add quality indicator
+            if (secSummary.financialQuality) {
+              const qualityLabel = getFinancialQualityLabel(secSummary.financialQuality);
+              eventContent = `${secSummary.summary} (${qualityLabel}) - ${secSummary.impact}`;
+            }
+
+            // Add sentiment emoji to the event line
+            events.push(`  ${sentimentEmoji} [${filing.type}] ${eventContent} (${daysAgo}일 전)`);
+            continue; // Skip the regular push at the end
+          } else {
+            eventContent = getFilingTypeLabel(filing.type);
+          }
         } catch (error) {
           console.error(`[FMPParser] Error getting SEC summary for ${symbol}:`, error);
           eventContent = getFilingTypeLabel(filing.type);
@@ -406,6 +425,30 @@ function formatNumber(num: number): string {
   } else {
     return num.toFixed(0);
   }
+}
+
+/**
+ * Get sentiment emoji based on sentiment
+ */
+function getSentimentEmoji(sentiment: 'positive' | 'negative' | 'neutral'): string {
+  const emojis: Record<string, string> = {
+    positive: '🟢',
+    negative: '🔴',
+    neutral: '🟡',
+  };
+  return emojis[sentiment] || '⚪';
+}
+
+/**
+ * Get financial quality label
+ */
+function getFinancialQualityLabel(quality: 'strong' | 'weak' | 'mixed'): string {
+  const labels: Record<string, string> = {
+    strong: '양호',
+    weak: '부진',
+    mixed: '혼조',
+  };
+  return labels[quality] || '보통';
 }
 
 // ========================================

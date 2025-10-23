@@ -380,6 +380,31 @@ class AITradingService {
   }
 
   /**
+   * 🆕 기술적 조건 개별 평가 점수 계산
+   *
+   * - 각 조건당: 충족하면 +(0.5 / 조건수), 불충족하면 -(0.5 / 조건수)
+   * - 예: RSI, MACD, Bollinger 3개 중 2개 충족 → +0.17 +0.17 -0.17 = +0.17
+   *
+   * @param conditions - 기술적 조건 평가 결과 배열
+   * @returns 기술적 점수 (-0.5 ~ +0.5)
+   */
+  private calculateTechnicalScore(conditions?: Array<{ condition: string; actual: string; result: boolean; details?: string }>): number {
+    if (!conditions || conditions.length === 0) {
+      // 조건이 없으면 중립 (0점)
+      return 0;
+    }
+
+    const scorePerCondition = 0.5 / conditions.length;
+    let totalScore = 0;
+
+    conditions.forEach(cond => {
+      totalScore += cond.result ? scorePerCondition : -scorePerCondition;
+    });
+
+    return totalScore;
+  }
+
+  /**
    * finalScore에 따라 리미트 가격 오프셋 계산
    *
    * - 매우 긍정적 (0.7 이상): 현재가 대비 +0.3% 리미트 (빠른 체결)
@@ -406,7 +431,8 @@ class AITradingService {
     symbol: string;
     currentPrice: number;
     currentPosition: CurrentPosition | null;
-    technicalSignal: boolean;
+    technicalSignal: boolean;  // 호환성 유지 (deprecated, use technicalConditions)
+    technicalConditions?: Array<{ condition: string; actual: string; result: boolean; details?: string }>;  // 🆕 개별 조건 평가 결과
     newsAnalysis: NewsAnalysis;
     fundAllocation: number;
     stopLoss?: number;  // 예: 5 (%)
@@ -419,6 +445,7 @@ class AITradingService {
       currentPrice,
       currentPosition,
       technicalSignal,
+      technicalConditions,
       newsAnalysis,
       fundAllocation,
       stopLoss = 5,
@@ -436,13 +463,29 @@ class AITradingService {
 
     // === 1단계: 객관적 점수 계산 ===
     const sentimentScore = newsAnalysis.sentiment || 0;
-    const technicalScore = technicalSignal ? 0.5 : -0.5;
+
+    // 🆕 기술적 조건 개별 평가 (각 조건당 점수 계산)
+    const technicalScore = technicalConditions
+      ? this.calculateTechnicalScore(technicalConditions)
+      : (technicalSignal ? 0.5 : -0.5);  // fallback to old logic
+
     const baseScore = sentimentScore * 0.7 + technicalScore * 0.3;
+
+    // 기술적 조건 상세 로그
+    if (technicalConditions && technicalConditions.length > 0) {
+      console.log(`📐 기술적 조건 평가 (개별 점수):`);
+      technicalConditions.forEach(cond => {
+        const scorePerCondition = (0.5 / technicalConditions.length);
+        const condScore = cond.result ? scorePerCondition : -scorePerCondition;
+        console.log(`  • ${cond.condition}: ${cond.result ? '✅' : '❌'} (${condScore >= 0 ? '+' : ''}${condScore.toFixed(3)})`);
+      });
+      console.log(`  • 총 기술적 점수: ${technicalScore.toFixed(2)}`);
+    }
 
     const objectiveReasoning = [
       `📊 객관적 분석:`,
       `  • 뉴스 감성: ${sentimentScore.toFixed(2)} (${newsAnalysis.sentimentLabel}, 가중치 70%)`,
-      `  • 기술적 조건: ${technicalScore.toFixed(2)} (${technicalSignal ? '충족' : '불충족'}, 가중치 30%)`,
+      `  • 기술적 조건: ${technicalScore.toFixed(2)} (${technicalConditions ? `${technicalConditions.filter(c => c.result).length}/${technicalConditions.length} 충족` : (technicalSignal ? '충족' : '불충족')}, 가중치 30%)`,
       `  • 기초 점수: ${baseScore.toFixed(2)}`
     ].join('\n');
 

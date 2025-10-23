@@ -147,6 +147,21 @@ model WatchList {
   @@map("watchlist")
 }
 
+// BotRecommendationReport stores AI-generated bot recommendations
+model BotRecommendationReport {
+  id                  String   @id @default(cuid())
+  recommendations     String   // JSON stringified: BotRecommendation[]
+  analysisNotes       String?  // AI analysis notes
+  totalOpportunities  Int      // Number of opportunities analyzed
+  filteredOTCCount    Int      @default(0)  // Number of OTC stocks filtered
+  highConfidenceCount Int      // Number of high confidence recommendations
+  timestamp           DateTime @default(now())
+  createdAt           DateTime @default(now())
+
+  @@index([timestamp])
+  @@map("bot_recommendation_reports")
+}
+
 // Report represents bot test analysis results
 model Report {
   id             String    @id @default(cuid())

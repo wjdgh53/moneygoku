@@ -21,6 +21,9 @@ export interface SecDocumentSummary {
   filingDate: string;
   filingType: string;
   summary: string;       // AI-generated summary (1-2 sentences)
+  sentiment: 'positive' | 'negative' | 'neutral';  // Investor sentiment analysis
+  impact: string;        // Impact explanation for investors
+  financialQuality?: 'strong' | 'weak' | 'mixed';  // For 10-Q/10-K only
   items: string[];       // Important items found (e.g., ["Item 1.01", "Item 8.01"])
   fetchedAt: Date;
 }
@@ -57,13 +60,13 @@ class SecDocumentSummaryService {
     symbol: string,
     filingType: string = '8-K',
     filingDate: string = ''
-  ): Promise<string | null> {
+  ): Promise<SecDocumentSummary | null> {
     // Check cache first
     const cacheKey = `${symbol}:${filingDate}:${filingType}`;
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       console.log(`[SecSummary] Using cached summary for ${symbol} ${filingType}`);
-      return cached.summary;
+      return cached;
     }
 
     try {
@@ -83,9 +86,9 @@ class SecDocumentSummaryService {
         return null;
       }
 
-      // 3. Generate AI summary
-      const summary = await this.generateSummary(symbol, filingType, text, items);
-      if (!summary) {
+      // 3. Generate AI summary with sentiment analysis
+      const aiResult = await this.generateSummary(symbol, filingType, text, items);
+      if (!aiResult) {
         console.log(`[SecSummary] Failed to generate summary for ${symbol}`);
         return null;
       }
@@ -95,7 +98,10 @@ class SecDocumentSummaryService {
         symbol,
         filingDate,
         filingType,
-        summary,
+        summary: aiResult.summary,
+        sentiment: aiResult.sentiment,
+        impact: aiResult.impact,
+        financialQuality: aiResult.financialQuality,
         items,
         fetchedAt: new Date()
       };
@@ -104,8 +110,8 @@ class SecDocumentSummaryService {
         timestamp: new Date()
       });
 
-      console.log(`[SecSummary] ✅ Summary generated for ${symbol}: ${summary}`);
-      return summary;
+      console.log(`[SecSummary] ✅ Summary generated for ${symbol}: ${aiResult.summary} [${aiResult.sentiment}]`);
+      return result;
 
     } catch (error) {
       console.error(`[SecSummary] Error processing ${symbol}:`, error);
@@ -188,20 +194,29 @@ class SecDocumentSummaryService {
   }
 
   /**
-   * Generate AI summary using OpenAI
+   * Generate AI summary using OpenAI with sentiment analysis
    */
   private async generateSummary(
     symbol: string,
     filingType: string,
     text: string,
     items: string[]
-  ): Promise<string | null> {
+  ): Promise<{
+    summary: string;
+    sentiment: 'positive' | 'negative' | 'neutral';
+    impact: string;
+    financialQuality?: 'strong' | 'weak' | 'mixed';
+  } | null> {
     try {
       const itemsText = items.length > 0
         ? `\n\n주요 항목:\n${items.join('\n')}`
         : '';
 
-      const prompt = `당신은 SEC 문서를 분석하는 금융 전문가입니다.
+      // Different prompts for financial reports vs event reports
+      const isFinancialReport = filingType === '10-Q' || filingType === '10-K';
+
+      const prompt = isFinancialReport
+        ? `당신은 SEC 재무제표를 분석하는 금융 전문가입니다.
 
 ## 종목: ${symbol}
 ## 문서 타입: ${filingType}
@@ -211,17 +226,65 @@ ${itemsText}
 ${text.substring(0, 3000)}
 
 ## 작업:
-위 SEC ${filingType} 문서의 핵심 내용을 **1-2문장**으로 요약하세요.
-투자자가 즉시 이해할 수 있도록 **구체적인 금액, 날짜, 사건**을 포함하세요.
+위 SEC ${filingType} 재무제표를 분석하여 다음을 제공하세요:
 
-예시:
-- "$50M 시리즈 B 투자 유치 및 신규 이사 3명 선임"
-- "CEO 사임 및 후임 COO 승진 발표"
-- "$100M 규모 인수합병 계약 체결"
+1. **summary**: 핵심 내용을 1-2문장으로 요약 (구체적인 금액, 비율, 실적 포함)
+2. **sentiment**: 투자자 관점에서의 감성 분석
+   - "positive": 매출/이익 증가, 부채 감소, 긍정적 실적
+   - "negative": 매출/이익 감소, 부채 증가, 부정적 실적
+   - "neutral": 혼재되거나 변화 없음
+3. **impact**: 주가에 미칠 영향을 1문장으로 설명
+4. **financialQuality**: 재무 건전성 평가
+   - "strong": 매출/이익 성장, 부채 낮음, 양호한 재무 상태
+   - "weak": 매출/이익 감소, 부채 높음, 악화된 재무 상태
+   - "mixed": 일부 개선, 일부 악화
 
 ## 응답 형식 (JSON):
 {
-  "summary": "1-2문장 요약"
+  "summary": "1-2문장 요약",
+  "sentiment": "positive|negative|neutral",
+  "impact": "주가 영향 설명",
+  "financialQuality": "strong|weak|mixed"
+}`
+        : `당신은 SEC 문서를 분석하는 금융 전문가입니다.
+
+## 종목: ${symbol}
+## 문서 타입: ${filingType}
+${itemsText}
+
+## SEC 문서 내용:
+${text.substring(0, 3000)}
+
+## 작업:
+위 SEC ${filingType} 문서를 분석하여 다음을 제공하세요:
+
+1. **summary**: 핵심 내용을 1-2문장으로 요약 (구체적인 금액, 날짜, 사건 포함)
+2. **sentiment**: 투자자 관점에서의 감성 분석
+   - "positive": CEO 선임, 인수합병, 투자 유치, 파트너십 체결 등 긍정적 이벤트
+   - "negative": CEO 사임, 소송, 자산 매각, 구조조정 등 부정적 이벤트
+   - "neutral": 단순 절차적 보고, 중립적 이벤트
+3. **impact**: 주가에 미칠 영향을 1문장으로 설명
+
+## 응답 예시:
+긍정적 이벤트:
+{
+  "summary": "Steve Greenley를 신임 COO로 선임하여 운영 효율화 추진",
+  "sentiment": "positive",
+  "impact": "경영진 강화로 운영 효율 개선 기대"
+}
+
+부정적 이벤트:
+{
+  "summary": "CEO John Smith 사임 및 후임 미정",
+  "sentiment": "negative",
+  "impact": "경영 불확실성 증가로 단기 하락 압력 예상"
+}
+
+## 응답 형식 (JSON):
+{
+  "summary": "1-2문장 요약",
+  "sentiment": "positive|negative|neutral",
+  "impact": "주가 영향 설명"
 }`;
 
       const completion = await this.openai.chat.completions.create({
@@ -229,7 +292,7 @@ ${text.substring(0, 3000)}
         messages: [
           {
             role: 'system',
-            content: '당신은 SEC 문서를 간결하게 요약하는 금융 전문가입니다. 항상 JSON 형식으로 응답합니다.'
+            content: '당신은 SEC 문서를 분석하고 투자자 관점에서 감성 분석을 수행하는 금융 전문가입니다. 항상 JSON 형식으로 응답합니다.'
           },
           {
             role: 'user',
@@ -237,12 +300,24 @@ ${text.substring(0, 3000)}
           }
         ],
         temperature: 0.3,
-        max_tokens: 200,
+        max_tokens: 300,
         response_format: { type: 'json_object' }
       });
 
       const result = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      return result.summary || null;
+
+      // Validate required fields
+      if (!result.summary || !result.sentiment || !result.impact) {
+        console.error('[SecSummary] Missing required fields in AI response');
+        return null;
+      }
+
+      return {
+        summary: result.summary,
+        sentiment: result.sentiment,
+        impact: result.impact,
+        financialQuality: result.financialQuality || undefined
+      };
 
     } catch (error: any) {
       console.error('[SecSummary] OpenAI error:', error.message || error);
