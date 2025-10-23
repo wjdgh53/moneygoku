@@ -43,7 +43,9 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  * 시간이 지남에 따라 시그널의 가치가 감소하는 속도를 정의
  */
 const SIGNAL_HALF_LIFE_DAYS: Record<SignalType, number> = {
+  momentum: 5,                // 5일 (중단기 모멘텀)
   insider_buying: 60,         // 2개월 (장기 신호)
+  insider_selling: 60,        // 2개월 (장기 부정 신호)
   analyst_upgrade: 30,        // 1개월 후 50% 가치
   merger_acquisition: 14,     // 2주 (빠르게 프라이싱됨)
   top_gainer: 3,              // 3일 (단기 모멘텀)
