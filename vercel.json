@@ -1,16 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/short-term",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/cron/swing",
-      "schedule": "0 9,15 * * *"
-    },
-    {
-      "path": "/api/cron/long-term",
-      "schedule": "0 10 * * *"
-    }
-  ]
-}
+{}
