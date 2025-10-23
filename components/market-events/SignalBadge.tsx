@@ -24,6 +24,11 @@ const SIGNAL_COLORS: Record<SignalType, { bg: string; text: string; border: stri
     text: 'text-indigo-700',
     border: 'border-indigo-300',
   },
+  insider_selling: {
+    bg: 'bg-red-100',
+    text: 'text-red-700',
+    border: 'border-red-300',
+  },
   analyst_upgrade: {
     bg: 'bg-purple-100',
     text: 'text-purple-700',
@@ -45,9 +50,9 @@ const SIGNAL_COLORS: Record<SignalType, { bg: string; text: string; border: stri
     border: 'border-orange-300',
   },
   earnings_upcoming: {
-    bg: 'bg-red-100',
-    text: 'text-red-700',
-    border: 'border-red-300',
+    bg: 'bg-yellow-100',
+    text: 'text-yellow-700',
+    border: 'border-yellow-300',
   },
   high_volume: {
     bg: 'bg-gray-100',
@@ -60,6 +65,7 @@ const SIGNAL_COLORS: Record<SignalType, { bg: string; text: string; border: stri
 const SIGNAL_ICONS: Record<SignalType, string> = {
   momentum: '🚀',
   insider_buying: '💼',
+  insider_selling: '📉',
   analyst_upgrade: '📈',
   merger_acquisition: '🤝',
   top_gainer: '⬆️',
@@ -72,6 +78,7 @@ const SIGNAL_ICONS: Record<SignalType, string> = {
 const SIGNAL_NAMES: Record<SignalType, string> = {
   momentum: 'Momentum',
   insider_buying: 'Insider Buying',
+  insider_selling: 'Insider Selling',
   analyst_upgrade: 'Analyst Upgrade',
   merger_acquisition: 'M&A',
   top_gainer: 'Top Gainer',
