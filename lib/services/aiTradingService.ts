@@ -556,7 +556,9 @@ class AITradingService {
 ## FMP 추가 정보:
 ${parsedFMP.criticalEvents}
 
-${parsedFMP.insiderSignals}`;
+${parsedFMP.insiderSignals}
+
+${parsedFMP.recentNews}`;
 
       console.log(`\n📋 FMP 데이터 파싱 완료:`);
       console.log(`   SEC Filings: ${fmpNewsData.secFilings.length}개`);
@@ -585,11 +587,13 @@ FMP 데이터(SEC 문서, 내부자 거래)를 종합하여 기초 점수를 ±0
 - ❌ 부정 신호 → **- 조정** (하향)
 
 **긍정 신호 예시 (+0.1 ~ +0.5):**
+- 📰 뉴스 헤드라인: Earnings beat, margin expansion, revenue growth → +0.3 ~ +0.5
 - SEC 8-K: 대규모 투자 유치, 인수 발표, 계약 체결 → +0.3 ~ +0.5
 - 내부자 매수: 대규모 (>$100K), 임원/이사 매수 → +0.2 ~ +0.3
 - 애널리스트 Upgrade → +0.1 ~ +0.2
 
 **부정 신호 예시 (-0.1 ~ -0.5):**
+- 📰 뉴스 헤드라인: Earnings miss, revenue decline, layoffs, downgrade → -0.3 ~ -0.5
 - SEC 8-K: 소송, 조사, 리콜, 임원 퇴임 → -0.3 ~ -0.5
 - 내부자 매도: 대규모, 여러 임원 매도 → -0.2 ~ -0.3
 - 애널리스트 Downgrade → -0.1 ~ -0.2
@@ -609,7 +613,14 @@ ${currentPosition ? `
 - 현재 포지션 비율: 0% (신규 진입)
 - 신규 진입이므로 정상적인 기준으로 평가하세요.
 `}
-**중요**: Alpha Vantage 감성 점수 ${sentimentScore.toFixed(2)}는 이미 기초 점수에 반영되어 있습니다. FMP 데이터만 기반으로 추가 조정하세요.
+${sentimentScore === 0 && fmpDataText
+  ? `**⚠️ CRITICAL**: Alpha Vantage가 뉴스를 찾지 못했습니다 (sentiment = 0.00).
+FMP 뉴스 헤드라인이 유일한 정보원입니다!
+- FMP "최근 뉴스" 헤드라인을 면밀히 분석하세요 (earnings beat, margin expansion, growth 등)
+- 긍정적인 뉴스(실적 상회, 성장, 신규 계약 등) → **반드시 +0.2 ~ +0.5 적극 조정**
+- 부정적인 뉴스(실적 부진, 소송, 구조조정 등) → **-0.2 ~ -0.5 조정**
+- 뉴스가 중립적이거나 정보가 없을 때만 0.00 유지`
+  : `**중요**: Alpha Vantage 감성 점수 ${sentimentScore.toFixed(2)}는 이미 기초 점수에 반영되어 있습니다. FMP 데이터를 추가로 고려하여 조정하세요.`}
 
 ## 응답 형식 (JSON):
 {
