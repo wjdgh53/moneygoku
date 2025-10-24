@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getAlphaVantageKey } from '@/lib/config/env';
 
 class AlphaVantageService {
   private intervalId: NodeJS.Timeout | null = null;
@@ -6,11 +7,12 @@ class AlphaVantageService {
   private readonly POLL_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
   async fetchQuote(symbol: string) {
-    if (!process.env.ALPHA_VANTAGE_API_KEY) {
+    const apiKey = getAlphaVantageKey();
+    if (!apiKey) {
       throw new Error('Alpha Vantage API key not configured');
     }
 
-    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${process.env.ALPHA_VANTAGE_API_KEY}`;
+    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${apiKey}`;
 
     try {
       const response = await fetch(url);
@@ -129,6 +131,6 @@ class AlphaVantageService {
 export const alphaVantageService = new AlphaVantageService();
 
 // Auto-start polling in production
-if (process.env.NODE_ENV === 'production' && process.env.ALPHA_VANTAGE_API_KEY) {
+if (process.env.NODE_ENV === 'production' && getAlphaVantageKey()) {
   alphaVantageService.startPolling();
 }

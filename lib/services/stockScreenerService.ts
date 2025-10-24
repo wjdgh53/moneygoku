@@ -22,6 +22,7 @@ import {
   RateLimitError,
   InvalidParametersError
 } from '@/lib/types/stockScreener';
+import { getAlphaVantageKey } from '@/lib/config/env';
 
 /**
  * Cache entry structure
@@ -38,7 +39,7 @@ class StockScreenerService {
   private readonly BASE_URL = 'https://www.alphavantage.co/query';
 
   constructor() {
-    const apiKey = process.env.ALPHA_VANTAGE_KEY || process.env.ALPHA_VANTAGE_API_KEY;
+    const apiKey = getAlphaVantageKey();
     if (!apiKey) {
       throw new Error('ALPHA_VANTAGE_KEY or ALPHA_VANTAGE_API_KEY environment variable is not set');
     }

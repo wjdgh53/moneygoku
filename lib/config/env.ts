@@ -57,11 +57,22 @@ const envSchema = z.object({
  */
 function validateEnv() {
   try {
-    // Handle Alpha Vantage key (can be either ALPHA_VANTAGE_API_KEY or ALPHA_VANTAGE_KEY)
-    const alphaVantageKey = process.env.ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_KEY;
+    // Trim all environment variables to remove whitespace and newlines
+    const trimmedEnv: Record<string, string | undefined> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (typeof value === 'string') {
+        trimmedEnv[key] = value.trim();
+      } else {
+        trimmedEnv[key] = value;
+      }
+    }
+
+    // Handle Alpha Vantage key (ALPHA_VANTAGE_API_KEY is primary, ALPHA_VANTAGE_KEY is fallback)
+    const alphaVantageKey = (trimmedEnv.ALPHA_VANTAGE_API_KEY || trimmedEnv.ALPHA_VANTAGE_KEY || '').trim();
 
     const parsed = envSchema.parse({
-      ...process.env,
+      ...trimmedEnv,
+      ALPHA_VANTAGE_API_KEY: alphaVantageKey,
       ALPHA_VANTAGE_KEY: alphaVantageKey,
     });
 
@@ -109,7 +120,9 @@ export const isTest = env.NODE_ENV === 'test';
 
 /**
  * Helper: Get Alpha Vantage API key (handles both naming conventions)
+ * Returns trimmed value
  */
 export const getAlphaVantageKey = () => {
-  return process.env.ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_KEY || '';
+  const key = process.env.ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_KEY || '';
+  return typeof key === 'string' ? key.trim() : key;
 };

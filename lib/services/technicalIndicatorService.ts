@@ -1,4 +1,5 @@
 // Alpha Vantage Technical Indicator Service
+import { getAlphaVantageKey } from '@/lib/config/env';
 
 export interface AlphaVantageIndicatorResponse {
   rsi: number | null;
@@ -26,7 +27,7 @@ class TechnicalIndicatorService {
   private readonly BASE_URL = 'https://www.alphavantage.co/query';
 
   constructor() {
-    this.API_KEY = process.env.ALPHA_VANTAGE_API_KEY || '';
+    this.API_KEY = getAlphaVantageKey();
 
     if (!this.API_KEY) {
       throw new Error('ALPHA_VANTAGE_API_KEY environment variable is required. Please set it in your .env.local file.');

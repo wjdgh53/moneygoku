@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getAlphaVantageKey } from '@/lib/config/env';
 
 export interface HistoricalDataPoint {
   date: string;
@@ -33,10 +34,10 @@ class HistoricalDataService {
   private readonly BASE_URL = 'https://www.alphavantage.co/query';
 
   constructor() {
-    if (!process.env.ALPHA_VANTAGE_API_KEY) {
+    this.API_KEY = getAlphaVantageKey();
+    if (!this.API_KEY) {
       throw new Error('Alpha Vantage API key not configured');
     }
-    this.API_KEY = process.env.ALPHA_VANTAGE_API_KEY;
   }
 
   async fetchHistoricalData(symbol: string, outputSize: 'compact' | 'full' = 'full'): Promise<HistoricalDataPoint[]> {
