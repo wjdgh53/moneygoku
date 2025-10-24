@@ -92,6 +92,10 @@ class AlpacaTradingService {
       const data = await response.json();
 
       if (!response.ok) {
+        // 404 position not found는 정상 케이스이므로 에러 로그를 줄임
+        if (response.status === 404 && endpoint.includes('/positions/')) {
+          throw new Error(data.message || 'position does not exist');
+        }
         console.error('❌ Alpaca API Error:', {
           status: response.status,
           statusText: response.statusText,
@@ -103,6 +107,10 @@ class AlpacaTradingService {
       console.log('✅ Alpaca API Response:', data);
       return data;
     } catch (error: any) {
+      // position not found 에러는 정상 케이스이므로 로그를 줄임
+      if (error.message.includes('position does not exist')) {
+        throw error;
+      }
       console.error('💥 Alpaca API Request Failed:', error);
       throw error;
     }
@@ -143,7 +151,7 @@ class AlpacaTradingService {
         currentPrice: parseFloat(position.current_price)  // 실시간 현재가
       };
     } catch (error: any) {
-      if (error.message.includes('404')) {
+      if (error.message.includes('404') || error.message.includes('position does not exist')) {
         return null; // No position
       }
       throw error;

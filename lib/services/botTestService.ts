@@ -172,6 +172,97 @@ class BotTestService {
       return converted;
     }
 
+    // ===== NEW FORMAT: rules-based strategy conditions =====
+    if (dbConditions.rules && Array.isArray(dbConditions.rules)) {
+      console.log('🔄 Converting rules-based strategy format...');
+
+      for (const rule of dbConditions.rules) {
+        const { indicator, operator, value, weight } = rule;
+
+        // RSI rules
+        if (indicator === 'RSI') {
+          converted.rsi = {
+            period: 14, // Default RSI period
+            operator: operator as '<' | '>',
+            value: typeof value === 'number' ? value : 70
+          };
+        }
+
+        // SMA rules
+        else if (indicator === 'SMA_50' || indicator === 'SMA_200' || indicator === 'SMA') {
+          // Handle golden/death cross: SMA_50 CROSS_ABOVE SMA_200
+          if (operator === 'CROSS_ABOVE' && typeof value === 'string' && value.includes('SMA')) {
+            // This is a moving average crossover - handled separately
+            // For now, we'll just note that SMA is required
+            converted.sma = {
+              period: 50, // Default to shorter period
+              operator: 'price_above'
+            };
+          } else {
+            // Simple SMA price position
+            const period = indicator === 'SMA_200' ? 200 : indicator === 'SMA_50' ? 50 : 50;
+            converted.sma = {
+              period,
+              operator: operator === '>' ? 'price_above' : 'price_below'
+            };
+          }
+        }
+
+        // EMA rules
+        else if (indicator === 'EMA_50' || indicator === 'EMA_200' || indicator === 'EMA') {
+          const period = indicator === 'EMA_200' ? 200 : indicator === 'EMA_50' ? 50 : 50;
+          converted.ema = {
+            period,
+            operator: operator === '>' ? 'price_above' : 'price_below'
+          };
+        }
+
+        // MACD rules
+        else if (indicator === 'MACD') {
+          if (operator === 'CROSS_ABOVE') {
+            converted.macd = { operator: 'bullish_crossover' };
+          } else if (operator === 'CROSS_BELOW') {
+            converted.macd = { operator: 'bearish_crossover' };
+          } else if (operator === '>') {
+            converted.macd = { operator: 'histogram_positive' };
+          } else if (operator === '<') {
+            converted.macd = { operator: 'histogram_negative' };
+          }
+        }
+
+        // Bollinger Bands rules
+        else if (indicator === 'PRICE' && typeof value === 'string') {
+          // PRICE > BB_UPPER or PRICE < BB_LOWER
+          if (value === 'BB_UPPER') {
+            converted.bollinger = {
+              period: 20, // Default BB period
+              operator: operator === '>' ? 'price_above_upper' : 'price_below_lower'
+            };
+          } else if (value === 'BB_LOWER') {
+            converted.bollinger = {
+              period: 20,
+              operator: operator === '<' ? 'price_below_lower' : 'price_above_upper'
+            };
+          }
+        }
+
+        // BBANDS direct indicator
+        else if (indicator === 'BBANDS') {
+          converted.bollinger = {
+            period: 20,
+            operator: operator === '>' ? 'price_above_upper' : 'price_below_lower'
+          };
+        }
+
+        // VOLUME, CHANGE_PERCENT rules are skipped (not technical indicators)
+        // They're used in AI scoring but don't need indicator data
+      }
+
+      console.log('✅ Converted rules-based format:', converted);
+      return converted;
+    }
+
+    // ===== OLD FORMAT: legacy strategy conditions =====
     // RSI conversion
     if (dbConditions.rsi) {
       const rsi = dbConditions.rsi;
@@ -383,8 +474,11 @@ class BotTestService {
             }
           }
         }
-      } catch (posError) {
-        console.error(`❌ 포지션 조회 실패:`, posError);
+      } catch (posError: any) {
+        // position not found는 정상 케이스이므로 에러 로그를 출력하지 않음
+        if (!posError.message?.includes('position does not exist')) {
+          console.error(`❌ 포지션 조회 실패:`, posError);
+        }
 
         // 에러 시에도 DB fallback 시도
         if (botId) {
