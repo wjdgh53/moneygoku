@@ -27,6 +27,8 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
   const [botName, setBotName] = useState(initialValues?.name || '');
   const [symbol, setSymbol] = useState(initialValues?.symbol || '');
   const [fundAllocation, setFundAllocation] = useState(initialValues?.fundAllocation || 1000);
+  const [isETF, setIsETF] = useState(false);
+  const [underlyingAsset, setUnderlyingAsset] = useState('');
 
   const handleNext = () => {
     if (currentStep < 3) {
@@ -59,7 +61,8 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
           name: botName,
           symbol,
           fundAllocation,
-          strategyId
+          strategyId,
+          underlyingAsset: isETF ? underlyingAsset : null
         })
       });
 
@@ -171,6 +174,59 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
                 </p>
               </div>
 
+              {/* ETF 체크박스 */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <label className="flex items-start cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isETF}
+                    onChange={(e) => {
+                      setIsETF(e.target.checked);
+                      if (!e.target.checked) {
+                        setUnderlyingAsset('');
+                      }
+                    }}
+                    className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <div className="ml-3">
+                    <span className="text-sm font-medium text-gray-900">
+                      레버리지 ETF인가요?
+                    </span>
+                    <p className="text-xs text-gray-600 mt-1">
+                      2x/3x 레버리지 ETF (예: BITX, TSLL, TQQQ)를 거래하는 경우 체크하세요
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* 조건부 기초자산 입력 */}
+              {isETF && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    기초 자산 심볼 *
+                  </label>
+                  <input
+                    type="text"
+                    value={underlyingAsset}
+                    onChange={(e) => setUnderlyingAsset(e.target.value.toUpperCase())}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="예: BTC (BITX의 경우), TSLA (TSLL의 경우)"
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    뉴스 분석에 사용할 기초 자산의 심볼을 입력하세요
+                  </p>
+                  <div className="mt-2 text-xs text-gray-700">
+                    <div className="font-semibold mb-1">예시:</div>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>BITX (2x Bitcoin) → BTC</li>
+                      <li>TSLL (2x Tesla) → TSLA</li>
+                      <li>TQQQ (3x Nasdaq) → QQQ</li>
+                      <li>SOXL (3x Semiconductor) → SOXX</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   할당 자금
@@ -214,6 +270,12 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
                     <div className="text-sm text-gray-600">거래 종목</div>
                     <div className="font-semibold text-gray-900">{symbol}</div>
                   </div>
+                  {isETF && underlyingAsset && (
+                    <div>
+                      <div className="text-sm text-gray-600">기초 자산</div>
+                      <div className="font-semibold text-gray-900">{underlyingAsset}</div>
+                    </div>
+                  )}
                   <div>
                     <div className="text-sm text-gray-600">할당 자금</div>
                     <div className="font-semibold text-gray-900">${fundAllocation.toLocaleString()}</div>

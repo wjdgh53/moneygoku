@@ -494,10 +494,29 @@ class BotTestService {
 
       report.conditions.push(...entryResult.conditions);
 
+      // 3.4.5. 🆕 Determine news symbol (underlying asset for leveraged ETFs)
+      let newsSymbol = symbol;
+      if (botId) {
+        try {
+          const bot = await prisma.bot.findUnique({
+            where: { id: botId },
+            select: { underlyingAsset: true }
+          });
+
+          if (bot?.underlyingAsset) {
+            newsSymbol = bot.underlyingAsset;
+            console.log(`📰 Leveraged ETF detected: Using underlying asset "${newsSymbol}" for news analysis (bot symbol: ${symbol})`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Failed to fetch bot underlying asset, using symbol:', error);
+          // Continue with original symbol
+        }
+      }
+
       // 3.5. 🆕 Fetch and analyze news
-      console.log(`📰 Analyzing news for ${symbol}...`);
+      console.log(`📰 Analyzing news for ${newsSymbol}...`);
       try {
-        const newsAnalysis = await newsAnalysisService.analyzeNews(symbol);
+        const newsAnalysis = await newsAnalysisService.analyzeNews(newsSymbol);
         report.newsAnalysis = newsAnalysis;
         console.log(`✅ News analysis completed: ${newsAnalysis.articles.length} articles found`);
       } catch (error) {
@@ -511,9 +530,9 @@ class BotTestService {
       }
 
       // 3.6. 🆕 Fetch FMP news data
-      console.log(`📰 Fetching FMP news for ${symbol}...`);
+      console.log(`📰 Fetching FMP news for ${newsSymbol}...`);
       try {
-        const fmpNews = await fmpNewsService.getAllNews(symbol, {
+        const fmpNews = await fmpNewsService.getAllNews(newsSymbol, {
           newsLimit: 5,
           pressReleaseLimit: 5,
           includeSocialSentiment: true
@@ -527,7 +546,7 @@ class BotTestService {
 
         // 🆕 Parse FMP data for display
         const { parseFMPDataForGPT } = await import('@/lib/utils/fmpDataParser');
-        report.parsedFmpData = await parseFMPDataForGPT(fmpNews, symbol);
+        report.parsedFmpData = await parseFMPDataForGPT(fmpNews, newsSymbol);
         console.log(`✅ FMP data parsed for display`);
       } catch (error) {
         console.error('❌ FMP news fetch failed:', error);
