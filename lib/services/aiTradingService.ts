@@ -158,14 +158,14 @@ class AITradingService {
       console.log(`📈 최종 점수: ${finalScore.toFixed(2)}`);
       console.log(`💭 GPT 판단: ${aiReasoning}`);
 
-      // === 4단계: 최종 매매 결정 (HOLD 범위 축소) ===
+      // === 4단계: 최종 매매 결정 (보수적 매수 전략) ===
       let action: 'BUY' | 'SELL' | 'HOLD';
       let shouldTrade = false;
 
       if (finalScore < -0.2) {
         action = 'SELL';
         shouldTrade = true;
-      } else if (finalScore < 0.15) {
+      } else if (finalScore < 0.35) {  // 0.15 → 0.35 (더 신중한 매수)
         action = 'HOLD';
         shouldTrade = false;
       } else {
@@ -310,7 +310,7 @@ class AITradingService {
     currentPrice: number
   ): number {
     // 1. 기본 체크
-    if (finalScore <= 0.2) return 0;
+    if (finalScore < 0.35) return 0;  // BUY 임계값과 동일
     if (fundAllocation <= 0 || currentPrice <= 0) return 0;
 
     // 2. Kelly Criterion (1/4 Kelly for safety)
@@ -323,21 +323,18 @@ class AITradingService {
     let kelly = (winProb * b - q) / b;
     kelly = Math.max(0, kelly) * 0.25;  // 1/4 Kelly (보수적)
 
-    // 3. 점수 기반 포지션 비율 결정
+    // 3. 점수 기반 포지션 비율 결정 (단일 종목 집중 투자)
     let positionRatio: number;
 
     if (finalScore >= 0.7) {
-      // 매우 강한 신호: Kelly 사용 (최소 30%, 최대 50%)
-      positionRatio = Math.min(Math.max(kelly, 0.30), 0.50);
+      // 매우 강한 신호: Kelly 사용 (최소 70%, 최대 90%)
+      positionRatio = Math.min(Math.max(kelly, 0.70), 0.90);
     } else if (finalScore >= 0.5) {
-      // 강한 신호: Kelly * 0.8 (최소 25%, 최대 40%)
-      positionRatio = Math.min(Math.max(kelly * 0.8, 0.25), 0.40);
-    } else if (finalScore >= 0.3) {
-      // 보통 신호: 고정 20%
-      positionRatio = 0.20;
+      // 강한 신호: Kelly * 0.8 (최소 50%, 최대 70%)
+      positionRatio = Math.min(Math.max(kelly * 0.8, 0.50), 0.70);
     } else {
-      // 약한 신호: 고정 15%
-      positionRatio = 0.15;
+      // 보통 신호: Kelly * 0.6 (최소 30%, 최대 50%)
+      positionRatio = Math.min(Math.max(kelly * 0.6, 0.30), 0.50);
     }
 
     // 4. 최종 수량 계산
