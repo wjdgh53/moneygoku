@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "postinstall": "prisma generate",
     "db:seed": "npx ts-node prisma/seed.ts",
     "test:profiles": "npx ts-node scripts/test-profiles.ts",
     "test:opportunities": "npx ts-node scripts/test-investment-opportunities.ts"
