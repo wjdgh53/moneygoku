@@ -24,6 +24,7 @@ export interface CreateBotParams {
   orderType?: 'MARKET' | 'LIMIT';
   description?: string;
   underlyingAsset?: string | null;
+  extendedHours?: boolean;
 }
 
 export interface CreateBotResult {
@@ -74,7 +75,7 @@ function validateBotParams(params: CreateBotParams): { valid: boolean; error?: s
  * Main function: Create a single bot with all validation and FMP integration
  */
 export async function createBot(params: CreateBotParams): Promise<CreateBotResult> {
-  const { name, symbol, strategyId, fundAllocation, orderType, description, underlyingAsset } = params;
+  const { name, symbol, strategyId, fundAllocation, orderType, description, underlyingAsset, extendedHours } = params;
 
   try {
     // 1. Validate input parameters
@@ -148,6 +149,7 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotResul
         name,
         symbol: symbol.toUpperCase(),
         underlyingAsset: underlyingAsset?.toUpperCase() || null,
+        extendedHours: extendedHours || false,
         strategyId,
         fundAllocation,
         orderType: orderType || 'MARKET',

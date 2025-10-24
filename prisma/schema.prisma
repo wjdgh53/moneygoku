@@ -37,6 +37,7 @@ model Bot {
   name           String
   symbol         String
   underlyingAsset String?  // 레버리지 ETF의 기초 자산 (예: BITX → BTC)
+  extendedHours  Boolean  @default(false)  // 시간외 거래 활성화 (pre-market, after-hours)
   status         BotStatus @default(STOPPED) // ACTIVE, PAUSED, STOPPED, ERROR
   mode           TradingMode @default(PAPER)  // PAPER만 지원
   orderType      String   @default("MARKET")  // MARKET, LIMIT

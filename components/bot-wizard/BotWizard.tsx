@@ -29,6 +29,7 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
   const [fundAllocation, setFundAllocation] = useState(initialValues?.fundAllocation || 1000);
   const [isETF, setIsETF] = useState(false);
   const [underlyingAsset, setUnderlyingAsset] = useState('');
+  const [extendedHours, setExtendedHours] = useState(false);
 
   const handleNext = () => {
     if (currentStep < 3) {
@@ -62,7 +63,8 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
           symbol,
           fundAllocation,
           strategyId,
-          underlyingAsset: isETF ? underlyingAsset : null
+          underlyingAsset: isETF ? underlyingAsset : null,
+          extendedHours
         })
       });
 
@@ -247,6 +249,29 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
                   이 봇에 할당할 초기 자금을 설정하세요
                 </p>
               </div>
+
+              {/* 시간외 거래 체크박스 */}
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <label className="flex items-start cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={extendedHours}
+                    onChange={(e) => setExtendedHours(e.target.checked)}
+                    className="mt-1 w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  />
+                  <div className="ml-3">
+                    <span className="text-sm font-medium text-gray-900">
+                      시간외 거래 활성화 (Pre-market & After-hours)
+                    </span>
+                    <p className="text-xs text-gray-600 mt-1">
+                      장 시작 전(4:00 AM - 9:30 AM ET) 및 장 마감 후(4:00 PM - 8:00 PM ET) 거래 허용
+                    </p>
+                    <div className="mt-2 text-xs text-yellow-700 bg-yellow-50 rounded p-2">
+                      ⚠️ 주의: 시간외 거래는 유동성이 낮아 슬리피지가 클 수 있습니다.
+                    </div>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
         )}
@@ -283,6 +308,12 @@ export default function BotWizard({ isEdit = false, botId, initialValues }: BotW
                   <div>
                     <div className="text-sm text-gray-600">초기 상태</div>
                     <div className="font-semibold text-gray-900">STOPPED</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-gray-600">시간외 거래</div>
+                    <div className="font-semibold text-gray-900">
+                      {extendedHours ? '✅ 활성화' : '⏸️ 비활성화'}
+                    </div>
                   </div>
                 </div>
               </div>

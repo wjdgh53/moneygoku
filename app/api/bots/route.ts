@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
       fundAllocation,
       orderType,
       strategyId,
-      underlyingAsset
+      underlyingAsset,
+      extendedHours
     } = body;
 
     // Use common bot creation service
@@ -47,7 +48,8 @@ export async function POST(request: NextRequest) {
       fundAllocation: fundAllocation || 1000.0,
       orderType: orderType || 'MARKET',
       description,
-      underlyingAsset: underlyingAsset || null
+      underlyingAsset: underlyingAsset || null,
+      extendedHours: extendedHours || false
     });
 
     // Handle creation result

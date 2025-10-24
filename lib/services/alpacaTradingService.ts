@@ -14,6 +14,7 @@ export interface TradeRequest {
   qty: number;
   price?: number; // For limit orders
   timeInForce?: 'day' | 'gtc' | 'ioc' | 'fok';
+  extendedHours?: boolean; // Enable pre-market and after-hours trading
 }
 
 export interface TradeResponse {
@@ -253,7 +254,8 @@ class AlpacaTradingService {
         side: trade.side,
         type: trade.type,
         time_in_force: trade.timeInForce || 'day',
-        ...(finalPrice && { limit_price: finalPrice.toString() })  // 🆕 반올림된 가격 사용
+        ...(finalPrice && { limit_price: finalPrice.toString() }),  // 🆕 반올림된 가격 사용
+        ...(trade.extendedHours && { extended_hours: true })  // 🆕 시간외 거래 지원
       };
 
       const response = await this.makeRequest('/v2/orders', 'POST', orderData);
@@ -382,13 +384,33 @@ class AlpacaTradingService {
 
     console.log(`🔧 가격 반올림: $${limitPrice} → $${roundedLimitPrice}`);
 
+    // 🆕 Fetch bot's extendedHours setting
+    let extendedHours = false;
+    if (botId) {
+      try {
+        const { prisma } = await import('@/lib/prisma');
+        const bot = await prisma.bot.findUnique({
+          where: { id: botId },
+          select: { extendedHours: true }
+        });
+        if (bot?.extendedHours) {
+          extendedHours = true;
+          console.log(`🌙 시간외 거래 활성화됨 (botId: ${botId})`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to fetch bot extendedHours setting:', error);
+        // Continue with extendedHours = false
+      }
+    }
+
     const trade: TradeRequest = {
       symbol,
       qty: quantity,
       side,
       type: 'limit',
       price: roundedLimitPrice,  // 🆕 반올림된 가격 사용
-      timeInForce: 'day' // 당일 유효
+      timeInForce: 'day', // 당일 유효
+      extendedHours // 🆕 시간외 거래 옵션 추가
     };
 
     console.log(`📝 리미트 오더 생성:`, {
@@ -396,7 +418,8 @@ class AlpacaTradingService {
       side: side.toUpperCase(),
       quantity,
       limitPrice: `$${roundedLimitPrice.toFixed(2)}`,
-      botId: botId || 'N/A'
+      botId: botId || 'N/A',
+      extendedHours: extendedHours ? '✅ 시간외 거래 활성화' : '⏸️ 정규 거래만'
     });
 
     const result = await this.executeTrade(trade);
