@@ -12,6 +12,7 @@
  */
 
 import OpenAI from 'openai';
+import { env } from '@/lib/config/env';
 
 /**
  * SEC Document Summary response
@@ -44,7 +45,7 @@ class SecDocumentSummaryService {
   private readonly MAX_HTML_LENGTH = 50000; // Limit HTML size for OpenAI
 
   constructor() {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY is not set');
     }

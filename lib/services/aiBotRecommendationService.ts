@@ -13,6 +13,7 @@ import { InvestmentOpportunity } from '@/lib/types/investmentOpportunity';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { prisma } from '@/lib/prisma';
+import { env } from '@/lib/config/env';
 
 /**
  * AI Bot Recommendation
@@ -57,11 +58,11 @@ class AIBotRecommendationService {
   private cache: CacheEntry | null = null;
 
   constructor() {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY environment variable is not set');
     }
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const model = env.OPENAI_MODEL;
 
     this.chatModel = new ChatOpenAI({
       apiKey,

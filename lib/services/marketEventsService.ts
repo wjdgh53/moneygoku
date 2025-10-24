@@ -35,6 +35,7 @@ import {
 } from '@/lib/types/marketEvents';
 
 import { stockScreenerService } from './stockScreenerService';
+import { env } from '@/lib/config/env';
 
 /**
  * Cache entry structure
@@ -62,7 +63,7 @@ class MarketEventsService {
   private marketMoversCache: CacheEntry<MarketMovers> | null = null;
 
   constructor() {
-    const apiKey = process.env.FMP_API_KEY;
+    const apiKey = env.FMP_API_KEY;
     if (!apiKey) {
       throw new Error('FMP_API_KEY environment variable is not set');
     }

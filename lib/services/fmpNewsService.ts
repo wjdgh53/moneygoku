@@ -15,6 +15,7 @@
  * - Graceful error handling with fallback to cached data
  */
 
+import { env } from '@/lib/config/env';
 import {
   FMPStockNews,
   FMPPressRelease,
@@ -49,7 +50,7 @@ class FMPNewsService {
   private insiderTradesCache = new Map<string, CacheEntry<FMPInsiderTrade[]>>();
 
   constructor() {
-    const apiKey = process.env.FMP_API_KEY;
+    const apiKey = env.FMP_API_KEY;
     if (!apiKey) {
       throw new Error('FMP_API_KEY environment variable is not set');
     }

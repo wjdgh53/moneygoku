@@ -5,6 +5,8 @@
  * API 제한: 월 250회 (봇 생성 시에만 호출)
  */
 
+import { env } from '@/lib/config/env';
+
 export interface AnalystChange {
   company: string;
   from: string;
@@ -43,7 +45,7 @@ class FMPAnalystService {
   private baseUrl = 'https://financialmodelingprep.com/api/v4';
 
   constructor() {
-    const apiKey = process.env.FMP_API_KEY;
+    const apiKey = env.FMP_API_KEY;
     if (!apiKey) {
       throw new Error('FMP_API_KEY is not set');
     }

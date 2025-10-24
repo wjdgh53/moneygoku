@@ -5,6 +5,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { AnalystRating } from './fmpAnalystService';
 import { FMPNewsData } from '@/lib/types/fmpNews';
 import { parseFMPDataForGPT, ParsedFMPData } from '@/lib/utils/fmpDataParser';
+import { env } from '@/lib/config/env';
 
 export interface CurrentPosition {
   quantity: number;
@@ -63,11 +64,11 @@ class AITradingService {
   private chatModel: ChatOpenAI;
 
   constructor() {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = env.OPENAI_API_KEY;
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY is not set');
     }
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const model = env.OPENAI_MODEL;
 
     this.chatModel = new ChatOpenAI({
       apiKey,

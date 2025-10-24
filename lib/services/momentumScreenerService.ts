@@ -11,6 +11,7 @@
  */
 
 import { stockScreenerService } from './stockScreenerService';
+import { env } from '@/lib/config/env';
 
 /**
  * Momentum Stock Result
@@ -29,7 +30,7 @@ class MomentumScreenerService {
   private readonly FMP_API_KEY: string;
 
   constructor() {
-    const apiKey = process.env.FMP_API_KEY;
+    const apiKey = env.FMP_API_KEY;
     if (!apiKey) {
       throw new Error('FMP_API_KEY environment variable is not set');
     }

@@ -1,4 +1,6 @@
 // Alpaca Trading Service - Execute real trades via Alpaca API
+import { env } from '@/lib/config/env';
+
 export interface AlpacaConfig {
   apiKey: string;
   secretKey: string;
@@ -47,9 +49,9 @@ class AlpacaTradingService {
 
   constructor() {
     this.config = {
-      apiKey: process.env.ALPACA_API_KEY || '',
-      secretKey: process.env.ALPACA_SECRET_KEY || '',
-      baseUrl: process.env.ALPACA_BASE_URL || 'https://paper-api.alpaca.markets'
+      apiKey: env.ALPACA_API_KEY,
+      secretKey: env.ALPACA_SECRET_KEY,
+      baseUrl: env.ALPACA_BASE_URL
     };
 
     if (!this.config.apiKey || !this.config.secretKey) {
