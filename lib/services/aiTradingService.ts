@@ -353,26 +353,23 @@ class AITradingService {
    * ✨ 목표 포지션 비율 계산 (신호 강도 기반)
    *
    * @param finalScore - AI 최종 점수 (-1.0 ~ 1.0)
-   * @returns 목표 포지션 비율 (0.0 ~ 0.5)
+   * @returns 목표 포지션 비율 (0.0 ~ 0.8)
    */
   private calculateTargetPositionRatio(finalScore: number): number {
     if (finalScore >= 0.7) {
-      // 매우 강한 신호: 40-50%
-      return 0.50;
+      // 매우 강한 신호: 80% (단일 종목 집중 투자)
+      return 0.80;
     } else if (finalScore >= 0.5) {
-      // 강한 신호: 30-40%
+      // 강한 신호: 60%
+      return 0.60;
+    } else if (finalScore >= 0.35) {
+      // 보통 신호: 40% (BUY 임계값과 일치)
       return 0.40;
-    } else if (finalScore >= 0.3) {
-      // 보통 신호: 20-30%
-      return 0.25;
-    } else if (finalScore >= 0.2) {
-      // 약한 신호: 15-20%
-      return 0.15;
-    } else if (finalScore <= -0.3) {
-      // 강한 매도 신호: 0% (전량 매도)
+    } else if (finalScore <= -0.35) {
+      // 강한 매도 신호: 0% (전량 매도, SELL 임계값과 일치)
       return 0.0;
     } else {
-      // 중립/약한 매도: 현재 포지션 유지 (HOLD)
+      // HOLD 범위 (-0.35 ~ 0.35): 현재 포지션 유지
       return -1; // -1은 "유지" 신호
     }
   }
@@ -462,12 +459,47 @@ class AITradingService {
     // === 1단계: 객관적 점수 계산 ===
     const sentimentScore = newsAnalysis.sentiment || 0;
 
+    // 🆕 소셜 감성 점수 추출 (FMP 데이터)
+    let socialScore = 0;
+    if (fmpNewsData && fmpNewsData.socialSentiment.length > 0) {
+      const latest = fmpNewsData.socialSentiment[0];
+      socialScore = (latest.stocktwitsSentiment + latest.twitterSentiment) / 2;
+      console.log(`📱 소셜 감성: ${socialScore.toFixed(2)} (StockTwits: ${latest.stocktwitsSentiment.toFixed(2)}, Twitter: ${latest.twitterSentiment.toFixed(2)})`);
+      console.log(`   게시물: StockTwits ${latest.stocktwitsPosts}개, Twitter ${latest.twitterPosts}개`);
+    } else {
+      console.log(`📱 소셜 감성: 데이터 없음`);
+    }
+
     // 🆕 기술적 조건 개별 평가 (각 조건당 점수 계산)
     const technicalScore = technicalConditions
       ? this.calculateTechnicalScore(technicalConditions)
       : (technicalSignal ? 0.5 : -0.5);  // fallback to old logic
 
-    const baseScore = sentimentScore * 0.7 + technicalScore * 0.3;
+    // 🆕 점수 계산 로직 개선 (소셜 감성 통합)
+    let baseScore: number;
+    let scoreExplanation: string;
+
+    if (sentimentScore === 0 && socialScore !== 0) {
+      // Alpha Vantage 없고 소셜만 있음 → 소셜을 주요 소스로
+      baseScore = socialScore * 0.7 + technicalScore * 0.3;
+      scoreExplanation = `소셜 ${socialScore.toFixed(2)} * 0.7 + 기술 ${technicalScore.toFixed(2)} * 0.3`;
+      console.log(`📊 점수 계산 (소셜 중심): ${scoreExplanation}`);
+    } else if (sentimentScore !== 0 && socialScore !== 0) {
+      // 둘 다 있음 → 둘 다 활용
+      baseScore = sentimentScore * 0.6 + socialScore * 0.1 + technicalScore * 0.3;
+      scoreExplanation = `Alpha ${sentimentScore.toFixed(2)} * 0.6 + 소셜 ${socialScore.toFixed(2)} * 0.1 + 기술 ${technicalScore.toFixed(2)} * 0.3`;
+      console.log(`📊 점수 계산 (통합): ${scoreExplanation}`);
+    } else if (sentimentScore !== 0) {
+      // Alpha Vantage만 있음 → 기존 로직
+      baseScore = sentimentScore * 0.7 + technicalScore * 0.3;
+      scoreExplanation = `Alpha ${sentimentScore.toFixed(2)} * 0.7 + 기술 ${technicalScore.toFixed(2)} * 0.3`;
+      console.log(`📊 점수 계산 (Alpha 중심): ${scoreExplanation}`);
+    } else {
+      // 둘 다 없음 → 기술적 신호만
+      baseScore = technicalScore * 1.0;
+      scoreExplanation = `기술 ${technicalScore.toFixed(2)} * 1.0 (뉴스 데이터 없음)`;
+      console.log(`📊 점수 계산 (기술만): ${scoreExplanation}`);
+    }
 
     // 기술적 조건 상세 로그
     if (technicalConditions && technicalConditions.length > 0) {
@@ -482,10 +514,11 @@ class AITradingService {
 
     const objectiveReasoning = [
       `📊 객관적 분석:`,
-      `  • 뉴스 감성: ${sentimentScore.toFixed(2)} (${newsAnalysis.sentimentLabel}, 가중치 70%)`,
-      `  • 기술적 조건: ${technicalScore.toFixed(2)} (${technicalConditions ? `${technicalConditions.filter(c => c.result).length}/${technicalConditions.length} 충족` : (technicalSignal ? '충족' : '불충족')}, 가중치 30%)`,
-      `  • 기초 점수: ${baseScore.toFixed(2)}`
-    ].join('\n');
+      `  • Alpha Vantage 감성: ${sentimentScore.toFixed(2)} (${newsAnalysis.sentimentLabel})`,
+      socialScore !== 0 ? `  • 소셜 감성: ${socialScore.toFixed(2)} (StockTwits + Twitter)` : null,
+      `  • 기술적 조건: ${technicalScore.toFixed(2)} (${technicalConditions ? `${technicalConditions.filter(c => c.result).length}/${technicalConditions.length} 충족` : (technicalSignal ? '충족' : '불충족')})`,
+      `  • 기초 점수: ${baseScore.toFixed(2)} (${scoreExplanation})`
+    ].filter(Boolean).join('\n');
 
     console.log(objectiveReasoning);
 
