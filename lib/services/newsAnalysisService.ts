@@ -28,46 +28,40 @@ class NewsAnalysisService {
   }
 
   /**
-   * Fetch news from Tavily API
+   * Fetch news from Alpha Vantage NEWS_SENTIMENT API
    */
-  private async fetchFromTavily(symbol: string): Promise<NewsArticle[]> {
-    const apiKey = process.env.TAVILY_API_KEY;
+  private async fetchFromAlphaVantage(symbol: string): Promise<NewsArticle[]> {
+    const apiKey = env.ALPHA_VANTAGE_KEY;
     if (!apiKey) {
-      console.warn('⚠️ TAVILY_API_KEY not set, returning empty news');
+      console.warn('⚠️ ALPHA_VANTAGE_KEY not set, returning empty news');
       return [];
     }
 
     try {
-      const response = await fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          api_key: apiKey,
-          query: `${symbol} stock news`,
-          search_depth: 'basic',
-          max_results: 5,
-          include_domains: ['finance.yahoo.com', 'bloomberg.com', 'reuters.com', 'cnbc.com']
-        })
-      });
+      const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&limit=10&apikey=${apiKey}`;
+
+      const response = await fetch(url);
 
       if (!response.ok) {
-        throw new Error(`Tavily API error: ${response.statusText}`);
+        throw new Error(`Alpha Vantage API error: ${response.statusText}`);
       }
 
       const data = await response.json();
 
-      return (data.results || []).map((result: any) => ({
-        title: result.title || 'Untitled',
-        url: result.url || '',
-        content: result.content || '',
-        publishedDate: result.published_date || new Date().toISOString(),
-        source: new URL(result.url || 'https://unknown.com').hostname
-      }));
+      if (data.feed && Array.isArray(data.feed)) {
+        return data.feed.slice(0, 5).map((item: any) => ({
+          title: item.title || 'Untitled',
+          url: item.url || '',
+          content: item.summary || '',
+          publishedDate: item.time_published || new Date().toISOString(),
+          source: item.source || 'Unknown'
+        }));
+      }
+
+      return [];
 
     } catch (error) {
-      console.error('❌ Tavily fetch error:', error);
+      console.error('❌ Alpha Vantage news fetch error:', error);
       return [];
     }
   }
@@ -157,9 +151,9 @@ ${articlesText}
   async analyzeNews(symbol: string): Promise<NewsAnalysis> {
     console.log(`📰 Fetching news for ${symbol}...`);
 
-    // 1. Fetch news from Tavily
-    const articles = await this.fetchFromTavily(symbol);
-    console.log(`✅ Found ${articles.length} articles`);
+    // 1. Fetch news from Alpha Vantage
+    const articles = await this.fetchFromAlphaVantage(symbol);
+    console.log(`✅ Found ${articles.length} articles from Alpha Vantage`);
 
     // 2. Analyze with OpenAI (summary + sentiment)
     const analysis = await this.analyzeWithAI(symbol, articles);
