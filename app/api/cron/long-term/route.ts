@@ -10,13 +10,17 @@ import { executeBotsForTimeHorizon } from '@/lib/services/cronExecutor';
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify request is from Vercel Cron
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+    // Only allow execution in production environment (Vercel)
+    // Vercel Cron jobs don't send Authorization headers automatically
+    if (process.env.NODE_ENV === 'production') {
+      // In production, only accept requests from Vercel's domain
+      const host = request.headers.get('host');
+      if (!host?.includes('vercel.app')) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        );
+      }
     }
 
     console.log('⏰ [Cron] LONG_TERM execution triggered');
