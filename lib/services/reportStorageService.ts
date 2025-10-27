@@ -8,6 +8,12 @@ class ReportStorageService {
   async saveReport(report: TestReport, botId: string): Promise<string> {
     try {
       console.log(`💾 Saving report for bot ${botId}...`);
+      console.log(`🔍 report.newsAnalysis:`, report.newsAnalysis ? {
+        articles: report.newsAnalysis.articles?.length || 0,
+        summary: report.newsAnalysis.summary?.substring(0, 50) || 'no summary',
+        sentiment: report.newsAnalysis.sentiment
+      } : 'undefined');
+      console.log(`🔍 report.parsedFmpData:`, report.parsedFmpData ? 'present' : 'undefined');
 
       const savedReport = await prisma.report.create({
         data: {
@@ -177,14 +183,14 @@ class ReportStorageService {
               action: report.aiAction as 'BUY' | 'SELL' | 'HOLD',
               actionType: report.aiAction === 'HOLD' ? 'HOLD' : (report.aiAction === 'BUY' ? 'NEW_POSITION' : 'FULL_EXIT'),
               objectiveScore: {
-                sentiment: 0,
-                technical: 0,
-                baseScore: 0
+                sentiment: report.newsSentiment || 0,
+                technical: report.technicalScore || 0,
+                baseScore: report.baseScore || 0
               },
-              gptAdjustment: 0,
-              finalScore: 0,
-              objectiveReasoning: '',
-              aiReasoning: report.aiReason || '',
+              gptAdjustment: report.gptAdjustment || 0,
+              finalScore: report.finalScore || 0,
+              objectiveReasoning: report.objectiveReasoning || '',
+              aiReasoning: report.aiReasoning || '',
               reason: report.aiReason || '',
               limitPrice: report.aiLimitPrice || undefined,
               quantity: report.aiQuantity || undefined
