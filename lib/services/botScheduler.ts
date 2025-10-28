@@ -11,14 +11,16 @@ interface SchedulerConfig {
 }
 
 // Cron schedule patterns (for reference only - actual scheduling in vercel.json)
+// Aligned with Alpaca extended trading hours: 4 AM - 8 PM ET (8 AM - 12 AM UTC)
 const SCHEDULES: SchedulerConfig = {
-  SHORT_TERM: '*/30 9-16 * * 1-5',  // Every 30 minutes, 9 AM - 4:30 PM, Mon-Fri
+  SHORT_TERM: '*/30 8-23 * * 1-5',  // Every 30 minutes, 8 AM - 11:30 PM UTC (4 AM - 7:30 PM ET), Mon-Fri
   SWING: [
-    '0 9 * * 1-5',   // 9:00 AM, Mon-Fri
-    '0 13 * * 1-5',  // 1:00 PM, Mon-Fri
-    '0 17 * * 1-5'   // 5:00 PM, Mon-Fri (after market close for analysis)
+    '0 8 * * 1-5',   // 8:00 AM UTC (4:00 AM ET - pre-market), Mon-Fri
+    '0 14 * * 1-5',  // 2:00 PM UTC (10:00 AM ET - morning), Mon-Fri
+    '0 17 * * 1-5',  // 5:00 PM UTC (1:00 PM ET - midday), Mon-Fri
+    '0 20 * * 1-5'   // 8:00 PM UTC (4:00 PM ET - market close), Mon-Fri
   ],
-  LONG_TERM: '0 9 * * 1-5'  // 9:00 AM, Mon-Fri
+  LONG_TERM: '0 14 * * 1-5'  // 2:00 PM UTC (10:00 AM ET), Mon-Fri
 };
 
 // Scheduler is disabled (using Vercel Cron Jobs instead)
