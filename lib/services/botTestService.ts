@@ -63,8 +63,16 @@ export interface StrategyCondition {
   sma?: { period: number; operator: 'price_above' | 'price_below' };
   ema?: { period: number; operator: 'price_above' | 'price_below' };
   macd?: { operator: 'histogram_positive' | 'histogram_negative' | 'bullish_crossover' | 'bearish_crossover' };
-  bollinger?: { period: number; operator: 'price_above_upper' | 'price_below_lower' | 'price_in_middle' };
+  bollinger?: {
+    period: number;
+    operator: 'price_above_upper' | 'price_below_lower' | 'price_in_middle' |
+              'price_below_upper' | 'price_above_lower' | 'price_above_middle' | 'price_below_middle' |
+              'price_approaching_upper' | 'price_approaching_lower' | 'band_squeeze' | 'band_expansion'
+  };
   stochastic?: { fastkperiod?: number; slowkperiod?: number; slowdperiod?: number; operator: 'oversold' | 'overbought' | 'bullish_cross' | 'bearish_cross'; kValue?: number; dValue?: number };
+  // 🆕 Crossover detection
+  smaCrossover?: { fastPeriod: number; slowPeriod: number; operator: 'golden_cross' | 'death_cross' };
+  emaCrossover?: { fastPeriod: number; slowPeriod: number; operator: 'bullish_cross' | 'bearish_cross' };
 }
 
 export interface ExitConditions {
@@ -188,18 +196,21 @@ class BotTestService {
           };
         }
 
-        // SMA rules
+        // 🆕 Enhanced SMA rules with crossover support
         else if (indicator === 'SMA_50' || indicator === 'SMA_200' || indicator === 'SMA') {
           // Handle golden/death cross: SMA_50 CROSS_ABOVE SMA_200
-          if (operator === 'CROSS_ABOVE' && typeof value === 'string' && value.includes('SMA')) {
-            // This is a moving average crossover - handled separately
-            // For now, we'll just note that SMA is required
-            converted.sma = {
-              period: 50, // Default to shorter period
-              operator: 'price_above'
+          if ((operator === 'CROSS_ABOVE' || operator === 'CROSS_BELOW') && typeof value === 'string' && value.includes('SMA')) {
+            // Extract periods from indicator names
+            const fastPeriod = indicator === 'SMA_50' ? 50 : indicator === 'SMA_200' ? 200 : 50;
+            const slowPeriod = value === 'SMA_200' ? 200 : value === 'SMA_50' ? 50 : 200;
+
+            converted.smaCrossover = {
+              fastPeriod,
+              slowPeriod,
+              operator: operator === 'CROSS_ABOVE' ? 'golden_cross' : 'death_cross'
             };
           } else {
-            // Simple SMA price position
+            // Simple SMA price position: PRICE > SMA_200
             const period = indicator === 'SMA_200' ? 200 : indicator === 'SMA_50' ? 50 : 50;
             converted.sma = {
               period,
@@ -208,13 +219,27 @@ class BotTestService {
           }
         }
 
-        // EMA rules
+        // 🆕 Enhanced EMA rules with crossover support
         else if (indicator === 'EMA_50' || indicator === 'EMA_200' || indicator === 'EMA') {
-          const period = indicator === 'EMA_200' ? 200 : indicator === 'EMA_50' ? 50 : 50;
-          converted.ema = {
-            period,
-            operator: operator === '>' ? 'price_above' : 'price_below'
-          };
+          // Handle EMA crossover: EMA_50 CROSS_ABOVE EMA_200
+          if ((operator === 'CROSS_ABOVE' || operator === 'CROSS_BELOW') && typeof value === 'string' && value.includes('EMA')) {
+            // Extract periods from indicator names
+            const fastPeriod = indicator === 'EMA_50' ? 50 : indicator === 'EMA_200' ? 200 : 50;
+            const slowPeriod = value === 'EMA_200' ? 200 : value === 'EMA_50' ? 50 : 200;
+
+            converted.emaCrossover = {
+              fastPeriod,
+              slowPeriod,
+              operator: operator === 'CROSS_ABOVE' ? 'bullish_cross' : 'bearish_cross'
+            };
+          } else {
+            // Simple EMA price position: PRICE > EMA_200
+            const period = indicator === 'EMA_200' ? 200 : indicator === 'EMA_50' ? 50 : 50;
+            converted.ema = {
+              period,
+              operator: operator === '>' ? 'price_above' : 'price_below'
+            };
+          }
         }
 
         // MACD rules
@@ -230,23 +255,37 @@ class BotTestService {
           }
         }
 
-        // Bollinger Bands rules
+        // 🆕 Enhanced Bollinger Bands rules with full operator support
         else if (indicator === 'PRICE' && typeof value === 'string') {
-          // PRICE > BB_UPPER or PRICE < BB_LOWER
+          // PRICE compared to BB_UPPER, BB_MIDDLE, BB_LOWER
           if (value === 'BB_UPPER') {
             converted.bollinger = {
               period: 20, // Default BB period
-              operator: operator === '>' ? 'price_above_upper' : 'price_below_lower'
+              operator: operator === '>' ? 'price_above_upper' :
+                       operator === '<' ? 'price_below_upper' :
+                       operator === '>=' ? 'price_above_upper' :
+                       operator === '<=' ? 'price_below_upper' : 'price_above_upper'
             };
           } else if (value === 'BB_LOWER') {
             converted.bollinger = {
               period: 20,
-              operator: operator === '<' ? 'price_below_lower' : 'price_above_upper'
+              operator: operator === '<' ? 'price_below_lower' :
+                       operator === '>' ? 'price_above_lower' :
+                       operator === '<=' ? 'price_below_lower' :
+                       operator === '>=' ? 'price_above_lower' : 'price_below_lower'
+            };
+          } else if (value === 'BB_MIDDLE') {
+            converted.bollinger = {
+              period: 20,
+              operator: operator === '>' ? 'price_above_middle' :
+                       operator === '<' ? 'price_below_middle' :
+                       operator === '>=' ? 'price_above_middle' :
+                       operator === '<=' ? 'price_below_middle' : 'price_above_middle'
             };
           }
         }
 
-        // BBANDS direct indicator
+        // BBANDS direct indicator (fallback for legacy format)
         else if (indicator === 'BBANDS') {
           converted.bollinger = {
             period: 20,
@@ -943,6 +982,16 @@ class BotTestService {
         }
       });
     }
+    // 🆕 SMA Crossover - fetch both fast and slow period SMAs
+    if (conditions.smaCrossover) {
+      indicators.push({ type: 'sma', params: { period: conditions.smaCrossover.fastPeriod } });
+      indicators.push({ type: 'sma', params: { period: conditions.smaCrossover.slowPeriod } });
+    }
+    // 🆕 EMA Crossover - fetch both fast and slow period EMAs
+    if (conditions.emaCrossover) {
+      indicators.push({ type: 'ema', params: { period: conditions.emaCrossover.fastPeriod } });
+      indicators.push({ type: 'ema', params: { period: conditions.emaCrossover.slowPeriod } });
+    }
 
     return indicators;
   }
@@ -1036,6 +1085,55 @@ class BotTestService {
         }
       } else {
         failedReasons.push('SMA data unavailable');
+      }
+    }
+
+    // 🆕 SMA Crossover condition (Golden/Death Cross)
+    if (conditions.smaCrossover) {
+      const { fastPeriod, slowPeriod, operator } = conditions.smaCrossover;
+
+      // Find both SMA values in API results
+      const fastSmaCall = apiResults.find(call =>
+        call.indicator === 'sma' && call.params?.period === fastPeriod
+      );
+      const slowSmaCall = apiResults.find(call =>
+        call.indicator === 'sma' && call.params?.period === slowPeriod
+      );
+
+      if (fastSmaCall && fastSmaCall.success && typeof fastSmaCall.result === 'number' &&
+          slowSmaCall && slowSmaCall.success && typeof slowSmaCall.result === 'number') {
+
+        const fastSma = fastSmaCall.result;
+        const slowSma = slowSmaCall.result;
+        let conditionMet = false;
+
+        if (operator === 'golden_cross') {
+          // Golden Cross: Fast SMA above Slow SMA (bullish)
+          conditionMet = fastSma > slowSma;
+        } else if (operator === 'death_cross') {
+          // Death Cross: Fast SMA below Slow SMA (bearish)
+          conditionMet = fastSma < slowSma;
+        }
+
+        const operatorText = operator === 'golden_cross' ? 'Golden Cross' : 'Death Cross';
+        const crossSymbol = operator === 'golden_cross' ? '>' : '<';
+        const conditionText = `SMA(${fastPeriod}) ${crossSymbol} SMA(${slowPeriod})`;
+        const actualText = `${fastSma.toFixed(2)} ${crossSymbol} ${slowSma.toFixed(2)}`;
+
+        results.push({
+          condition: operatorText,
+          actual: actualText,
+          result: conditionMet,
+          details: `SMA${fastPeriod}=${fastSma.toFixed(2)}, SMA${slowPeriod}=${slowSma.toFixed(2)}`
+        });
+
+        if (conditionMet) {
+          reasons.push(`${operatorText}: SMA${fastPeriod}(${fastSma.toFixed(2)}) ${crossSymbol} SMA${slowPeriod}(${slowSma.toFixed(2)})`);
+        } else {
+          failedReasons.push(`No ${operatorText}: SMA${fastPeriod}(${fastSma.toFixed(2)}) ${crossSymbol} SMA${slowPeriod}(${slowSma.toFixed(2)})`);
+        }
+      } else {
+        failedReasons.push(`SMA crossover data unavailable (SMA${fastPeriod} or SMA${slowPeriod})`);
       }
     }
 
@@ -1135,6 +1233,55 @@ class BotTestService {
       }
     }
 
+    // 🆕 EMA Crossover condition (Bullish/Bearish Cross)
+    if (conditions.emaCrossover) {
+      const { fastPeriod, slowPeriod, operator } = conditions.emaCrossover;
+
+      // Find both EMA values in API results
+      const fastEmaCall = apiResults.find(call =>
+        call.indicator === 'ema' && call.params?.period === fastPeriod
+      );
+      const slowEmaCall = apiResults.find(call =>
+        call.indicator === 'ema' && call.params?.period === slowPeriod
+      );
+
+      if (fastEmaCall && fastEmaCall.success && typeof fastEmaCall.result === 'number' &&
+          slowEmaCall && slowEmaCall.success && typeof slowEmaCall.result === 'number') {
+
+        const fastEma = fastEmaCall.result;
+        const slowEma = slowEmaCall.result;
+        let conditionMet = false;
+
+        if (operator === 'bullish_cross') {
+          // Bullish Cross: Fast EMA above Slow EMA
+          conditionMet = fastEma > slowEma;
+        } else if (operator === 'bearish_cross') {
+          // Bearish Cross: Fast EMA below Slow EMA
+          conditionMet = fastEma < slowEma;
+        }
+
+        const operatorText = operator === 'bullish_cross' ? 'Bullish EMA Cross' : 'Bearish EMA Cross';
+        const crossSymbol = operator === 'bullish_cross' ? '>' : '<';
+        const conditionText = `EMA(${fastPeriod}) ${crossSymbol} EMA(${slowPeriod})`;
+        const actualText = `${fastEma.toFixed(2)} ${crossSymbol} ${slowEma.toFixed(2)}`;
+
+        results.push({
+          condition: operatorText,
+          actual: actualText,
+          result: conditionMet,
+          details: `EMA${fastPeriod}=${fastEma.toFixed(2)}, EMA${slowPeriod}=${slowEma.toFixed(2)}`
+        });
+
+        if (conditionMet) {
+          reasons.push(`${operatorText}: EMA${fastPeriod}(${fastEma.toFixed(2)}) ${crossSymbol} EMA${slowPeriod}(${slowEma.toFixed(2)})`);
+        } else {
+          failedReasons.push(`No ${operatorText}: EMA${fastPeriod}(${fastEma.toFixed(2)}) ${crossSymbol} EMA${slowPeriod}(${slowEma.toFixed(2)})`);
+        }
+      } else {
+        failedReasons.push(`EMA crossover data unavailable (EMA${fastPeriod} or EMA${slowPeriod})`);
+      }
+    }
+
     // Bollinger Bands condition
     if (conditions.bollinger) {
       const bollingerCall = apiResults.find(call => call.indicator === 'bollinger');
@@ -1146,18 +1293,54 @@ class BotTestService {
           const condition = conditions.bollinger;
           let conditionMet = false;
 
+          // 🆕 Extended Bollinger Bands operators
           if (condition.operator === 'price_above_upper') {
             conditionMet = currentPrice > bollingerData.upper;
+          } else if (condition.operator === 'price_below_upper') {
+            // Exit signal for momentum strategy
+            conditionMet = currentPrice < bollingerData.upper;
           } else if (condition.operator === 'price_below_lower') {
             conditionMet = currentPrice < bollingerData.lower;
+          } else if (condition.operator === 'price_above_lower') {
+            // Exit signal for mean reversion strategy
+            conditionMet = currentPrice > bollingerData.lower;
+          } else if (condition.operator === 'price_above_middle') {
+            conditionMet = currentPrice > bollingerData.middle;
+          } else if (condition.operator === 'price_below_middle') {
+            // Exit signal for mean reversion when above middle
+            conditionMet = currentPrice < bollingerData.middle;
           } else if (condition.operator === 'price_in_middle') {
             conditionMet = currentPrice > bollingerData.lower && currentPrice < bollingerData.upper;
+          } else if (condition.operator === 'price_approaching_upper') {
+            // Price within 5% of upper band
+            const threshold = bollingerData.upper * 0.95;
+            conditionMet = currentPrice >= threshold && currentPrice < bollingerData.upper;
+          } else if (condition.operator === 'price_approaching_lower') {
+            // Price within 5% of lower band
+            const threshold = bollingerData.lower * 1.05;
+            conditionMet = currentPrice <= threshold && currentPrice > bollingerData.lower;
+          } else if (condition.operator === 'band_squeeze') {
+            // Band width < 5% of middle band (tight range)
+            const bandWidth = (bollingerData.upper - bollingerData.lower) / bollingerData.middle;
+            conditionMet = bandWidth < 0.05;
+          } else if (condition.operator === 'band_expansion') {
+            // Band width > 10% of middle band (volatile)
+            const bandWidth = (bollingerData.upper - bollingerData.lower) / bollingerData.middle;
+            conditionMet = bandWidth > 0.10;
           }
 
           let operatorText = '';
           if (condition.operator === 'price_above_upper') operatorText = 'price above upper';
+          else if (condition.operator === 'price_below_upper') operatorText = 'price below upper';
           else if (condition.operator === 'price_below_lower') operatorText = 'price below lower';
+          else if (condition.operator === 'price_above_lower') operatorText = 'price above lower';
+          else if (condition.operator === 'price_above_middle') operatorText = 'price above middle';
+          else if (condition.operator === 'price_below_middle') operatorText = 'price below middle';
           else if (condition.operator === 'price_in_middle') operatorText = 'price in middle';
+          else if (condition.operator === 'price_approaching_upper') operatorText = 'price approaching upper';
+          else if (condition.operator === 'price_approaching_lower') operatorText = 'price approaching lower';
+          else if (condition.operator === 'band_squeeze') operatorText = 'band squeeze';
+          else if (condition.operator === 'band_expansion') operatorText = 'band expansion';
 
           const conditionText = `Bollinger ${operatorText}`;
           const actualText = `Price=${currentPrice}, Upper=${bollingerData.upper.toFixed(2)}, Lower=${bollingerData.lower.toFixed(2)}`;
