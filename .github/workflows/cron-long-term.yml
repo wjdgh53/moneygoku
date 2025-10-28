@@ -1,6 +1,8 @@
 name: Cron - LONG_TERM Bots
 
 on:
+  push:  # TEMPORARY: Remove after first run to register workflow
+    branches: [main]
   schedule:
     # At 14:00 UTC, Monday-Friday
     - cron: '0 14 * * 1-5'
