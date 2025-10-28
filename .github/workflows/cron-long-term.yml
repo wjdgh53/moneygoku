@@ -1,0 +1,27 @@
+name: Cron - LONG_TERM Bots
+
+on:
+  schedule:
+    # At 14:00 UTC, Monday-Friday
+    - cron: '0 14 * * 1-5'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  trigger-long-term:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger LONG_TERM cron
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST https://moneygoku.vercel.app/api/cron/long-term -H "Content-Type: application/json")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if [ "$http_code" -ne 200 ]; then
+            echo "❌ Cron execution failed"
+            exit 1
+          fi
+
+          echo "✅ LONG_TERM cron executed successfully"

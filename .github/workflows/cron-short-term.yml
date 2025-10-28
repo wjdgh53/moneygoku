@@ -1,0 +1,27 @@
+name: Cron - SHORT_TERM Bots
+
+on:
+  schedule:
+    # Every 30 minutes, 8:00-23:30 UTC, Monday-Friday
+    - cron: '0,30 8-23 * * 1-5'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  trigger-short-term:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger SHORT_TERM cron
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST https://moneygoku.vercel.app/api/cron/short-term -H "Content-Type: application/json")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if [ "$http_code" -ne 200 ]; then
+            echo "❌ Cron execution failed"
+            exit 1
+          fi
+
+          echo "✅ SHORT_TERM cron executed successfully"

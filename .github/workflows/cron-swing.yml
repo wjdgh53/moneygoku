@@ -1,0 +1,27 @@
+name: Cron - SWING Bots
+
+on:
+  schedule:
+    # At 8:00, 14:00, 17:00, 20:00 UTC, Monday-Friday
+    - cron: '0 8,14,17,20 * * 1-5'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  trigger-swing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger SWING cron
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST https://moneygoku.vercel.app/api/cron/swing -H "Content-Type: application/json")
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+
+          if [ "$http_code" -ne 200 ]; then
+            echo "❌ Cron execution failed"
+            exit 1
+          fi
+
+          echo "✅ SWING cron executed successfully"
