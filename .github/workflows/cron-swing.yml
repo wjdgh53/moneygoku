@@ -1,8 +1,6 @@
 name: Cron - SWING Bots
 
 on:
-  push:  # TEMPORARY: Remove after first run to register workflow
-    branches: [main]
   schedule:
     # At 8:00, 14:00, 17:00, 20:00 UTC, Monday-Friday
     - cron: '0 8,14,17,20 * * 1-5'
