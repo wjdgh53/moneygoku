@@ -526,23 +526,71 @@ export default function TestRunReport({ report, isRunning = false, show = true, 
                 <div className={`border rounded-lg p-4 ${
                   report.tradeResult?.success
                     ? 'bg-green-50 border-green-200'
+                    : !report.tradeExecuted
+                    ? 'bg-yellow-50 border-yellow-200'
                     : 'bg-red-50 border-red-200'
                 }`}>
                   <h3 className={`font-semibold mb-3 ${
-                    report.tradeResult?.success ? 'text-green-800' : 'text-red-800'
+                    report.tradeResult?.success ? 'text-green-800' : !report.tradeExecuted ? 'text-yellow-800' : 'text-red-800'
                   }`}>
-                    {report.tradeResult?.success ? '✅' : '❌'} 거래 실행 결과
+                    {report.tradeResult?.success ? '✅' : !report.tradeExecuted ? '⏸️' : '❌'} 거래 실행 결과
                   </h3>
 
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div>
                       <span className="text-sm text-gray-600">거래 실행:</span>
                       <span className={`ml-2 font-semibold ${
-                        report.tradeExecuted ? 'text-green-700' : 'text-gray-700'
+                        report.tradeExecuted ? 'text-green-700' : 'text-yellow-700'
                       }`}>
                         {report.tradeExecuted ? '실행됨' : '실행 안됨'}
                       </span>
                     </div>
+
+                    {/* 실행 안 된 이유 표시 */}
+                    {!report.tradeExecuted && report.aiDecision?.aiReasoning && (
+                      <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-3">
+                        <h5 className="text-sm font-semibold text-yellow-800 mb-2">📋 실행 안 된 이유:</h5>
+                        <div className="text-sm text-gray-800 space-y-1">
+                          {/* 포지션 집중도 체크 */}
+                          {report.aiDecision.aiReasoning.includes('집중도') && (
+                            <div className="flex items-start space-x-2">
+                              <span className="text-yellow-600">⚠️</span>
+                              <p>포지션 집중도가 높아 추가 매수가 제한되었습니다.</p>
+                            </div>
+                          )}
+                          {/* 델타 임계값 체크 */}
+                          {report.aiDecision.aiReasoning.includes('델타') || report.aiDecision.aiReasoning.includes('포지션 유지') && (
+                            <div className="flex items-start space-x-2">
+                              <span className="text-yellow-600">📊</span>
+                              <p>현재 포지션과 목표 포지션의 차이가 리밸런싱 임계값(5%)에 미달합니다.</p>
+                            </div>
+                          )}
+                          {/* 자금 부족 체크 */}
+                          {(report.aiDecision.aiReasoning.includes('자금 부족') || report.aiDecision.quantity === 0) && (
+                            <div className="flex items-start space-x-2">
+                              <span className="text-yellow-600">💰</span>
+                              <p>할당 가능한 자금이 부족하거나 계산된 매수 수량이 0입니다.</p>
+                            </div>
+                          )}
+                          {/* 감쇠 효과 체크 */}
+                          {report.aiDecision.aiReasoning.includes('감쇠') && (
+                            <div className="flex items-start space-x-2">
+                              <span className="text-yellow-600">⚖️</span>
+                              <p>높은 포지션 비중으로 인해 신호 강도가 감쇠되었습니다.</p>
+                            </div>
+                          )}
+                          {/* 전체 AI 추론 표시 */}
+                          <details className="mt-2">
+                            <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-800">
+                              상세 분석 보기
+                            </summary>
+                            <pre className="mt-2 text-xs text-gray-700 whitespace-pre-wrap bg-white p-2 rounded border">
+                              {report.aiDecision.aiReasoning}
+                            </pre>
+                          </details>
+                        </div>
+                      </div>
+                    )}
 
                     {report.tradeResult && (
                       <>

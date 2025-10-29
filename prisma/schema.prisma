@@ -26,6 +26,7 @@ model Strategy {
 
   // Relationships
   bots            Bot[]
+  backtests       BacktestRun[]
 
   @@map("strategies")
 }
@@ -120,21 +121,36 @@ model Position {
   @@map("positions")
 }
 
-// MarketData stores market price information cache
+// MarketData stores market price information cache (Enhanced for backtesting)
 model MarketData {
   id        String   @id @default(cuid())
+
+  // Identification
   symbol    String
+  interval  String   @default("daily") // "1min", "5min", "15min", "60min", "daily"
+  timestamp DateTime // Bar start time (UTC)
+
+  // OHLCV data
   open      Float    // 시가
   high      Float    // 고가
   low       Float    // 저가
   close     Float    // 종가
   volume    Float    // 거래량
-  timestamp DateTime // 데이터 시간
+
+  // Data quality flags (for backtesting)
+  isValidated Boolean  @default(false)  // Passed validation checks
+  hasGap      Boolean  @default(false)  // Gap detected before this bar
+  isAnomaly   Boolean  @default(false)  // Flagged as anomalous (spike, zero volume)
+
+  // Metadata
   source    String   @default("ALPHA_VANTAGE")
+  fetchedAt DateTime @default(now())   // When data was fetched from API
   createdAt DateTime @default(now())
 
-  @@unique([symbol, timestamp])
-  @@index([symbol])
+  @@unique([symbol, interval, timestamp])
+  @@index([symbol, interval])
+  @@index([timestamp])
+  @@index([isValidated])
   @@map("market_data")
 }
 
@@ -235,6 +251,251 @@ model Report {
   @@map("reports")
 }
 
+// ==================================================
+// BACKTESTING SYSTEM MODELS
+// ==================================================
+
+// MarketDataStatus tracks completeness of historical data for backtesting
+model MarketDataStatus {
+  id              String   @id @default(cuid())
+  symbol          String
+  interval        String   // "daily", "1min", "5min", etc.
+  startDate       DateTime // Earliest available bar
+  endDate         DateTime // Latest available bar
+  totalBars       Int      @default(0)
+  missingBars     Int      @default(0)
+  completeness    Float    @default(0.0) // Percentage (0-100)
+  lastUpdated     DateTime @updatedAt
+  createdAt       DateTime @default(now())
+
+  @@unique([symbol, interval])
+  @@index([symbol])
+  @@map("market_data_status")
+}
+
+// AlphaVantageApiLog tracks API usage for rate limiting
+model AlphaVantageApiLog {
+  id              String   @id @default(cuid())
+  endpoint        String   // "TIME_SERIES_INTRADAY", "TIME_SERIES_DAILY", etc.
+  symbol          String
+  interval        String?  // For intraday calls
+  status          String   // "SUCCESS", "RATE_LIMITED", "ERROR"
+  responseTime    Int      // milliseconds
+  errorMessage    String?
+  timestamp       DateTime @default(now())
+
+  @@index([timestamp])
+  @@index([status])
+  @@map("alphavantage_api_logs")
+}
+
+// BacktestRun represents a single backtest execution
+model BacktestRun {
+  id              String   @id @default(cuid())
+
+  // Configuration
+  strategyId      String
+  strategy        Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  symbol          String
+  timeHorizon     TimeHorizon
+
+  // Time range
+  startDate       DateTime  // Backtest period start (e.g., 2023-01-01)
+  endDate         DateTime  // Backtest period end (e.g., 2025-01-01)
+
+  // Initial parameters
+  initialCash     Float     @default(10000.0)
+  positionSizing  String    @default("FIXED_DOLLAR")  // FIXED_DOLLAR, FIXED_SHARES, PERCENT_EQUITY
+  positionSize    Float     @default(1000.0)          // $1000 per trade
+
+  // Execution parameters
+  slippageModel   String    @default("PERCENTAGE")     // PERCENTAGE, FIXED_DOLLAR
+  slippageBps     Int       @default(10)               // 10 basis points = 0.1%
+  commissionPerTrade Float  @default(1.0)              // $1 per trade
+
+  // Results (calculated after backtest)
+  totalTrades     Int       @default(0)
+  winningTrades   Int       @default(0)
+  losingTrades    Int       @default(0)
+  winRate         Float     @default(0.0)              // Percentage
+
+  finalCash       Float?
+  finalEquity     Float?
+  totalReturn     Float?                               // Dollar amount
+  totalReturnPct  Float?                               // Percentage
+
+  // Risk metrics
+  sharpeRatio     Float?
+  sortinoRatio    Float?
+  maxDrawdown     Float?                               // Percentage
+  maxDrawdownDate DateTime?
+
+  // Additional metrics
+  avgWinPct       Float?                               // Average winning trade %
+  avgLossPct      Float?                               // Average losing trade %
+  profitFactor    Float?                               // Gross profit / Gross loss
+  expectancy      Float?                               // Average $ per trade
+
+  // Metadata
+  status          BacktestStatus @default(PENDING)     // PENDING, RUNNING, COMPLETED, FAILED
+  errorMessage    String?
+  executionTime   Int?                                 // milliseconds
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relationships
+  trades          BacktestTrade[]
+  positions       BacktestPosition[]
+  equityCurve     BacktestEquityCurve[]
+  alerts          BacktestAlert[]
+
+  @@index([strategyId])
+  @@index([symbol])
+  @@index([status])
+  @@index([createdAt])
+  @@map("backtest_runs")
+}
+
+// BacktestTrade records individual trade executions during backtest
+model BacktestTrade {
+  id              String   @id @default(cuid())
+  backtestRunId   String
+  backtestRun     BacktestRun @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+
+  // Trade details
+  symbol          String
+  side            TradeSide        // BUY or SELL
+  quantity        Float
+
+  // Pricing
+  targetPrice     Float            // Signal price (close of bar)
+  executedPrice   Float            // Actual execution price (with slippage)
+  slippage        Float            // Dollar amount of slippage
+  commission      Float            // Commission paid
+
+  // Trade economics
+  grossAmount     Float            // quantity * executedPrice
+  netAmount       Float            // grossAmount ± slippage ± commission
+
+  // Timing
+  signalBar       DateTime         // Bar that generated the signal
+  executionBar    DateTime         // Bar on which order was filled
+
+  // Performance (for SELL orders only)
+  entryPrice      Float?           // Average entry price of position
+  realizedPL      Float?           // Realized P&L for this trade
+  realizedPLPct   Float?           // Realized P&L percentage
+  holdingPeriod   Int?             // Number of bars held
+
+  // Signal metadata (from Report scoring system)
+  entryReason     String?          // Entry signal description
+  exitReason      String?          // Exit signal description
+  technicalScore  Float?           // Technical indicator score at entry
+  newsScore       Float?           // News sentiment score at entry
+  aiScore         Float?           // GPT adjustment score
+  finalScore      Float?           // Combined score
+
+  // Metadata
+  createdAt       DateTime @default(now())
+
+  @@index([backtestRunId])
+  @@index([signalBar])
+  @@map("backtest_trades")
+}
+
+// BacktestPosition tracks open positions during backtest
+model BacktestPosition {
+  id              String   @id @default(cuid())
+  backtestRunId   String
+  backtestRun     BacktestRun @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+
+  // Position details
+  symbol          String
+  quantity        Float
+  avgEntryPrice   Float
+  totalCost       Float            // Total invested (including commissions)
+
+  // Current state (updated on each bar)
+  currentPrice    Float            // Latest bar close
+  marketValue     Float            // quantity * currentPrice
+  unrealizedPL    Float            // marketValue - totalCost
+  unrealizedPLPct Float            // (unrealizedPL / totalCost) * 100
+
+  // Timing
+  entryBar        DateTime         // First buy bar
+  lastUpdateBar   DateTime         // Last price update bar
+
+  // Risk management
+  highWaterMark   Float            // Highest unrealized P&L ever reached
+  maxDrawdownPct  Float            // Worst drawdown from high water mark
+
+  // Status
+  isOpen          Boolean  @default(true)
+  closedAt        DateTime?
+  exitBar         DateTime?
+
+  // Metadata
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([backtestRunId, symbol, isOpen])  // Only one open position per symbol
+  @@index([backtestRunId])
+  @@map("backtest_positions")
+}
+
+// BacktestEquityCurve records portfolio value snapshots at each bar
+model BacktestEquityCurve {
+  id              String   @id @default(cuid())
+  backtestRunId   String
+  backtestRun     BacktestRun @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+
+  // Snapshot at each bar
+  timestamp       DateTime         // Bar timestamp
+
+  // Portfolio state
+  cash            Float            // Available cash
+  stockValue      Float            // Market value of positions
+  totalEquity     Float            // cash + stockValue
+
+  // Running metrics
+  cumulativeReturn Float           // (totalEquity - initialCash) / initialCash
+  drawdown        Float            // Current drawdown from peak (%)
+
+  // Trade count
+  tradeCount      Int              // Total trades executed so far
+
+  @@unique([backtestRunId, timestamp])
+  @@index([backtestRunId])
+  @@index([timestamp])
+  @@map("backtest_equity_curve")
+}
+
+// BacktestAlert records performance degradation alerts
+model BacktestAlert {
+  id            String   @id @default(cuid())
+
+  backtestRunId String
+  backtestRun   BacktestRun @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+
+  // Alert details
+  alertType     String   // WIN_RATE_DROP, MAX_DRAWDOWN_BREACH, SHARPE_DECLINE
+  severity      String   // LOW, MEDIUM, HIGH
+  message       String
+  threshold     Float?   // Threshold value that triggered alert
+
+  // Metadata
+  dismissed     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([backtestRunId])
+  @@index([dismissed])
+  @@map("backtest_alerts")
+}
+
+// ==================================================
+// END BACKTESTING SYSTEM MODELS
+// ==================================================
+
 
 // Enums
 enum BotStatus {
@@ -268,4 +529,11 @@ enum RiskAppetite {
   DEFENSIVE   // Conservative
   BALANCED    // Moderate
   AGGRESSIVE  // Aggressive
+}
+
+enum BacktestStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
 }
