@@ -14,6 +14,14 @@ import { HistoricalDataProvider } from './historicalDataProvider';
 import { VirtualPortfolioEngine } from './virtualPortfolioEngine';
 import { PerformanceAnalytics } from './performanceAnalytics';
 import { TimeHorizon } from '@prisma/client';
+import {
+  emitBacktestStarted,
+  emitBacktestProgress,
+  emitBacktestTradeExecuted,
+  emitBacktestEquityUpdate,
+  emitBacktestCompleted,
+  emitBacktestFailed,
+} from '@/lib/realtime/backtestEvents';
 
 export interface BacktestConfig {
   strategyId: string;
@@ -83,6 +91,16 @@ export class BacktestController {
       console.log(`   Period: ${config.startDate.toISOString().split('T')[0]} to ${config.endDate.toISOString().split('T')[0]}`);
       console.log(`   Initial Cash: $${config.initialCash.toFixed(2)}`);
 
+      // Emit backtest started event
+      emitBacktestStarted({
+        backtestRunId: backtestRun.id,
+        symbol: config.symbol,
+        timeHorizon: config.timeHorizon,
+        startDate: config.startDate,
+        endDate: config.endDate,
+        initialCash: config.initialCash,
+      });
+
       // 2. Load strategy configuration
       console.log(`\n🔍 Loading strategy: ${config.strategyId}`);
       const strategy = await prisma.strategy.findUnique({
@@ -95,7 +113,7 @@ export class BacktestController {
 
       console.log(`✅ Strategy loaded: ${strategy.name}`);
 
-      // 3. Load historical OHLCV data
+      // 3. Load historical OHLCV data (automatically fetches from API if not cached)
       console.log(`\n📊 Loading historical data...`);
       const historicalBars = await this.dataProvider.loadHistoricalBars({
         symbol: config.symbol,
@@ -103,10 +121,6 @@ export class BacktestController {
         startDate: config.startDate,
         endDate: config.endDate,
       });
-
-      if (historicalBars.length === 0) {
-        throw new Error(`No historical data found for ${config.symbol}`);
-      }
 
       console.log(`✅ Loaded ${historicalBars.length} bars`);
 
@@ -150,7 +164,7 @@ export class BacktestController {
 
           if (shouldExit) {
             // Exit position
-            await this.portfolio.executeSellOrder({
+            const trade = await this.portfolio.executeSellOrder({
               backtestRunId: backtestRun.id,
               symbol: config.symbol,
               targetPrice: currentPrice,
@@ -158,6 +172,19 @@ export class BacktestController {
               executionBar: currentTimestamp,
               exitReason: 'STRATEGY_EXIT',
               quantity: openPosition.quantity,
+            });
+
+            // Emit trade executed event
+            emitBacktestTradeExecuted({
+              backtestRunId: backtestRun.id,
+              tradeId: trade.id,
+              side: 'SELL',
+              symbol: config.symbol,
+              quantity: trade.quantity,
+              executedPrice: trade.executedPrice,
+              realizedPL: trade.realizedPL,
+              realizedPLPct: trade.realizedPLPct,
+              timestamp: currentTimestamp,
             });
           }
         }
@@ -181,7 +208,7 @@ export class BacktestController {
 
             if (quantity > 0) {
               // Enter position
-              await this.portfolio.executeBuyOrder({
+              const trade = await this.portfolio.executeBuyOrder({
                 backtestRunId: backtestRun.id,
                 symbol: config.symbol,
                 quantity,
@@ -190,22 +217,65 @@ export class BacktestController {
                 executionBar: currentTimestamp,
                 entryReason: 'STRATEGY_ENTRY',
               });
+
+              // Emit trade executed event
+              emitBacktestTradeExecuted({
+                backtestRunId: backtestRun.id,
+                tradeId: trade.id,
+                side: 'BUY',
+                symbol: config.symbol,
+                quantity: trade.quantity,
+                executedPrice: trade.executedPrice,
+                timestamp: currentTimestamp,
+              });
             }
           }
         }
 
-        // Record equity curve snapshot (every bar)
-        await this.portfolio.recordEquityCurveSnapshot(currentTimestamp);
+        // Record equity curve snapshot (every bar - in memory)
+        this.portfolio.recordEquityCurveSnapshot(currentTimestamp);
 
-        // Progress logging (every 10%)
+        // Progress logging and event emissions (every 10%)
         barsProcessed++;
         const progress = (barsProcessed / totalBars) * 100;
         if (barsProcessed % Math.ceil(totalBars / 10) === 0) {
           console.log(`   Progress: ${progress.toFixed(0)}% (${barsProcessed}/${totalBars} bars)`);
+
+          // Get current portfolio state
+          const cash = this.portfolio.getCash();
+          const position = this.portfolio.getPosition(config.symbol);
+          const stockValue = position?.isOpen
+            ? position.quantity * currentPrice
+            : 0;
+          const totalEquity = cash + stockValue;
+
+          // Emit progress event
+          emitBacktestProgress({
+            backtestRunId: backtestRun.id,
+            barsProcessed,
+            totalBars,
+            progressPct: progress,
+            currentEquity: totalEquity,
+            currentTimestamp,
+          });
+
+          // Emit equity update event
+          emitBacktestEquityUpdate({
+            backtestRunId: backtestRun.id,
+            timestamp: currentTimestamp,
+            cash,
+            stockValue,
+            totalEquity,
+            drawdownPct: 0, // Will be calculated properly by analytics
+          });
         }
       }
 
       console.log(`✅ Simulation complete: ${barsProcessed} bars processed`);
+
+      // 5.5. Batch insert all equity curve snapshots (single DB operation)
+      console.log(`\n💾 Saving equity curve to database...`);
+      await this.portfolio.finalizeEquityCurve();
 
       // 6. Calculate final performance metrics
       console.log(`\n📈 Calculating performance metrics...`);
@@ -233,7 +303,6 @@ export class BacktestController {
           avgLossPct: metrics.avgLossPct,
           profitFactor: metrics.profitFactor,
           expectancy: metrics.expectancy,
-          completedAt: new Date(),
         },
       });
 
@@ -244,6 +313,19 @@ export class BacktestController {
       console.log(`   Sharpe Ratio: ${metrics.sharpeRatio?.toFixed(2) || 'N/A'}`);
       console.log(`   Max Drawdown: ${metrics.maxDrawdown?.toFixed(2) || 0}%`);
       console.log(`   Execution Time: ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+
+      // Emit completion event
+      emitBacktestCompleted({
+        backtestRunId: backtestRun.id,
+        finalEquity: metrics.finalEquity,
+        totalReturn: metrics.totalReturn,
+        totalReturnPct: metrics.totalReturnPct,
+        totalTrades: metrics.totalTrades,
+        winRate: metrics.winRate,
+        sharpeRatio: metrics.sharpeRatio,
+        maxDrawdown: metrics.maxDrawdown,
+        executionTime: (Date.now() - startTime) / 1000,
+      });
 
       return backtestRun.id;
 
@@ -259,6 +341,13 @@ export class BacktestController {
             errorMessage: error.message,
             executionTime: Date.now() - startTime,
           },
+        });
+
+        // Emit failure event
+        emitBacktestFailed({
+          backtestRunId,
+          error: error.message,
+          timestamp: new Date(),
         });
       }
 

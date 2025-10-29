@@ -85,7 +85,7 @@ export default async function BacktestDetailPage({ params }: PageProps) {
         orderBy: { executionBar: 'asc' },
       },
       positions: {
-        orderBy: { openedAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
       },
       equityCurve: {
         orderBy: { timestamp: 'asc' },

@@ -36,7 +36,7 @@ export class HistoricalDataProvider {
    * Strategy:
    * 1. Map timeHorizon to interval (SHORT_TERM → 15min, SWING → daily)
    * 2. Check cache (MarketData table)
-   * 3. If cache hit rate < 95%, fetch missing bars from Alpha Vantage
+   * 3. If insufficient data, fetch from Alpha Vantage
    * 4. Validate data quality
    * 5. Return chronologically sorted bars
    */
@@ -48,7 +48,7 @@ export class HistoricalDataProvider {
     );
 
     // 1. Try loading from cache
-    const cachedBars = await prisma.marketData.findMany({
+    let cachedBars = await prisma.marketData.findMany({
       where: {
         symbol: request.symbol,
         interval,
@@ -62,10 +62,64 @@ export class HistoricalDataProvider {
 
     console.log(`✅ Found ${cachedBars.length} cached bars`);
 
-    // TODO: Calculate cache hit rate
-    // TODO: If < 95%, fetch missing data from Alpha Vantage
-    // TODO: Validate data quality
-    // TODO: Update MarketDataStatus
+    // 2. Check if we have sufficient data
+    const expectedDays = this.calculateExpectedTradingDays(
+      request.startDate,
+      request.endDate
+    );
+    const cacheHitRate = cachedBars.length / expectedDays;
+
+    console.log(
+      `📊 Cache hit rate: ${(cacheHitRate * 100).toFixed(1)}% (${cachedBars.length}/${expectedDays} days)`
+    );
+
+    // 3. If insufficient data, fetch from Alpha Vantage
+    if (cacheHitRate < 0.5 || cachedBars.length === 0) {
+      console.log('⚠️  Insufficient cached data, fetching from Alpha Vantage...');
+
+      try {
+        await alphaVantageService.fetchAndCacheHistoricalData(
+          request.symbol,
+          request.startDate,
+          request.endDate
+        );
+
+        // Reload from cache
+        cachedBars = await prisma.marketData.findMany({
+          where: {
+            symbol: request.symbol,
+            interval,
+            timestamp: {
+              gte: request.startDate,
+              lte: request.endDate,
+            },
+          },
+          orderBy: { timestamp: 'asc' },
+        });
+
+        console.log(`✅ Loaded ${cachedBars.length} bars after fetching`);
+      } catch (error) {
+        console.error('❌ Failed to fetch historical data:', error);
+
+        // If we have some cached data, use it
+        if (cachedBars.length > 0) {
+          console.warn('⚠️  Using partial cached data');
+        } else {
+          // No cached data and API fetch failed - cannot proceed
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          throw new Error(
+            `No historical data available for ${request.symbol}. API fetch failed: ${errorMessage}`
+          );
+        }
+      }
+    }
+
+    // 4. Validate minimum data requirement
+    if (cachedBars.length < 20) {
+      throw new Error(
+        `Insufficient data for backtesting: only ${cachedBars.length} bars available (minimum 20 required)`
+      );
+    }
 
     return cachedBars.map((bar) => ({
       timestamp: bar.timestamp,
@@ -94,26 +148,18 @@ export class HistoricalDataProvider {
   }
 
   /**
-   * Fetch missing bars from Alpha Vantage API
+   * Calculate expected number of trading days between two dates
+   * Approximation: ~252 trading days per year (excludes weekends and holidays)
    */
-  private async fetchMissingBars(
-    symbol: string,
-    interval: string,
-    missingDates: Date[]
-  ): Promise<void> {
-    // TODO: Implement Alpha Vantage fetching with rate limiting
-    console.log(`🔄 Fetching ${missingDates.length} missing bars from Alpha Vantage`);
-  }
+  private calculateExpectedTradingDays(startDate: Date, endDate: Date): number {
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  /**
-   * Validate data quality (detect gaps, anomalies)
-   */
-  private async validateDataQuality(bars: HistoricalBar[]): Promise<void> {
-    // TODO: Implement data validation
-    // - Check for missing bars (gaps)
-    // - Flag zero volume bars
-    // - Detect price spikes (> 20% change)
-    console.log(`✅ Data validation placeholder`);
+    // Approximate: 5/7 days are trading days (excludes weekends)
+    // Further reduced by ~10 holidays per year
+    const tradingDays = Math.floor(diffDays * (5 / 7) * 0.96);
+
+    return Math.max(tradingDays, 1); // At least 1 day
   }
 }
 

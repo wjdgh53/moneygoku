@@ -46,10 +46,21 @@ interface SellOrderRequest {
 export class VirtualPortfolioEngine {
   private backtestRunId: string = '';
   private cash: number = 0;
+  private initialCash: number = 0;
   private positions: Map<string, any> = new Map();
   private slippageBps: number = 10;
   private commissionPerTrade: number = 1.0;
   private portfolioHighWaterMark: number = 0;
+  private tradeCount: number = 0;
+  private equityCurveSnapshots: Array<{
+    timestamp: Date;
+    cash: number;
+    stockValue: number;
+    totalEquity: number;
+    cumulativeReturn: number;
+    drawdown: number;
+    tradeCount: number;
+  }> = [];
 
   /**
    * Initialize portfolio with starting parameters
@@ -57,10 +68,13 @@ export class VirtualPortfolioEngine {
   initialize(config: PortfolioConfig): void {
     this.backtestRunId = config.backtestRunId;
     this.cash = config.initialCash;
+    this.initialCash = config.initialCash;
     this.slippageBps = config.slippageBps;
     this.commissionPerTrade = config.commissionPerTrade;
     this.positions.clear();
     this.portfolioHighWaterMark = config.initialCash;
+    this.tradeCount = 0;
+    this.equityCurveSnapshots = [];
 
     console.log(`💰 Portfolio initialized: $${this.cash} cash`);
   }
@@ -76,7 +90,7 @@ export class VirtualPortfolioEngine {
    * 5. Create or update position
    * 6. Record trade
    */
-  async executeBuyOrder(request: BuyOrderRequest): Promise<void> {
+  async executeBuyOrder(request: BuyOrderRequest): Promise<any> {
     // 1. Calculate execution price with slippage
     const slippageAmount = (request.targetPrice * this.slippageBps) / 10000;
     const executedPrice = request.targetPrice + slippageAmount;
@@ -155,7 +169,7 @@ export class VirtualPortfolioEngine {
     }
 
     // 6. Record trade
-    await prisma.backtestTrade.create({
+    const trade = await prisma.backtestTrade.create({
       data: {
         backtestRunId: request.backtestRunId,
         symbol: request.symbol,
@@ -177,9 +191,13 @@ export class VirtualPortfolioEngine {
       },
     });
 
+    this.tradeCount++;
+
     console.log(
       `✅ BUY executed: ${request.quantity} shares @ $${executedPrice.toFixed(2)} (slippage: $${slippageAmount.toFixed(4)}, cash remaining: $${this.cash.toFixed(2)})`
     );
+
+    return trade;
   }
 
   /**
@@ -193,7 +211,7 @@ export class VirtualPortfolioEngine {
    * 5. Update or close position
    * 6. Record trade
    */
-  async executeSellOrder(request: SellOrderRequest): Promise<void> {
+  async executeSellOrder(request: SellOrderRequest): Promise<any> {
     const position = this.positions.get(request.symbol);
     if (!position || !position.isOpen) {
       console.warn(`⚠️ No open position for ${request.symbol}`);
@@ -270,7 +288,7 @@ export class VirtualPortfolioEngine {
       (request.executionBar.getTime() - position.entryBar.getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    await prisma.backtestTrade.create({
+    const trade = await prisma.backtestTrade.create({
       data: {
         backtestRunId: request.backtestRunId,
         symbol: request.symbol,
@@ -292,9 +310,13 @@ export class VirtualPortfolioEngine {
       },
     });
 
+    this.tradeCount++;
+
     console.log(
       `✅ SELL executed: ${request.quantity} shares @ $${executedPrice.toFixed(2)} | P&L: ${realizedPL >= 0 ? '+' : ''}$${realizedPL.toFixed(2)} (${realizedPLPct.toFixed(2)}%) | Cash: $${this.cash.toFixed(2)}`
     );
+
+    return trade;
   }
 
   /**
@@ -354,16 +376,15 @@ export class VirtualPortfolioEngine {
   /**
    * Record equity curve snapshot for current bar
    *
-   * Calculates and records:
+   * Calculates and accumulates (in memory):
    * - Total stock value (sum of all open positions)
    * - Total equity (cash + stock value)
    * - Portfolio high water mark (peak equity)
    * - Current drawdown from peak (absolute and percentage)
    *
-   * This creates the equity curve used for performance visualization
-   * and risk metrics calculation (max drawdown, Sharpe ratio, etc.)
+   * Snapshots are stored in memory and batch-inserted at the end via finalizeEquityCurve()
    */
-  async recordEquityCurveSnapshot(timestamp: Date): Promise<void> {
+  recordEquityCurveSnapshot(timestamp: Date): void {
     // 1. Calculate total stock value from all open positions
     let totalStockValue = 0;
     for (const [symbol, position] of this.positions) {
@@ -378,33 +399,61 @@ export class VirtualPortfolioEngine {
     // 3. Update portfolio high water mark
     this.portfolioHighWaterMark = Math.max(this.portfolioHighWaterMark, totalEquity);
 
-    // 4. Calculate current drawdown
-    const drawdown = totalEquity - this.portfolioHighWaterMark;
-    const drawdownPct = this.portfolioHighWaterMark > 0
-      ? (drawdown / this.portfolioHighWaterMark) * 100
+    // 4. Calculate current drawdown (as percentage from peak)
+    const drawdownAmount = totalEquity - this.portfolioHighWaterMark;
+    const drawdown = this.portfolioHighWaterMark > 0
+      ? (drawdownAmount / this.portfolioHighWaterMark) * 100
       : 0;
 
-    // 5. Save snapshot to database
-    await prisma.backtestEquityCurve.create({
-      data: {
-        backtestRunId: this.backtestRunId,
-        timestamp,
-        cash: this.cash,
-        stockValue: totalStockValue,
-        totalEquity,
-        highWaterMark: this.portfolioHighWaterMark,
-        drawdown,
-        drawdownPct,
-      },
+    // 5. Calculate cumulative return (as percentage)
+    const cumulativeReturn = this.initialCash > 0
+      ? ((totalEquity - this.initialCash) / this.initialCash) * 100
+      : 0;
+
+    // 6. Accumulate snapshot in memory (no DB query needed)
+    this.equityCurveSnapshots.push({
+      timestamp,
+      cash: this.cash,
+      stockValue: totalStockValue,
+      totalEquity,
+      cumulativeReturn,
+      drawdown,
+      tradeCount: this.tradeCount,
     });
 
     // Log snapshot (every 10th to avoid spam)
     const randomLog = Math.random() < 0.1;
     if (randomLog) {
       console.log(
-        `📈 Equity snapshot: $${totalEquity.toFixed(2)} (cash: $${this.cash.toFixed(2)}, stocks: $${totalStockValue.toFixed(2)}, drawdown: ${drawdownPct.toFixed(2)}%)`
+        `📈 Equity snapshot: $${totalEquity.toFixed(2)} (cash: $${this.cash.toFixed(2)}, stocks: $${totalStockValue.toFixed(2)}, drawdown: ${drawdown.toFixed(2)}%)`
       );
     }
+  }
+
+  /**
+   * Batch insert all equity curve snapshots to database
+   *
+   * Call this ONCE at the end of backtest simulation to save all snapshots
+   * in a single batch operation (much faster than individual inserts).
+   */
+  async finalizeEquityCurve(): Promise<void> {
+    if (this.equityCurveSnapshots.length === 0) {
+      console.log('⚠️ No equity curve snapshots to save');
+      return;
+    }
+
+    const startTime = Date.now();
+    console.log(`💾 Saving ${this.equityCurveSnapshots.length} equity curve snapshots...`);
+
+    await prisma.backtestEquityCurve.createMany({
+      data: this.equityCurveSnapshots.map(snapshot => ({
+        backtestRunId: this.backtestRunId,
+        ...snapshot,
+      })),
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ Equity curve saved in ${duration}ms (${this.equityCurveSnapshots.length} snapshots)`);
   }
 
   getCash(): number {

@@ -7,7 +7,13 @@
  */
 
 import { NextRequest } from 'next/server';
-import { backtestEvents, BacktestEvent } from '@/lib/realtime/backtestEvents';
+import {
+  backtestEvents,
+  BacktestEvent,
+  emitBacktestCompleted,
+  emitBacktestFailed,
+} from '@/lib/realtime/backtestEvents';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -36,6 +42,39 @@ export async function GET(request: NextRequest) {
       console.error('Error sending SSE event:', error);
     }
   };
+
+  // Check if backtest is already completed
+  const backtestRun = await prisma.backtestRun.findUnique({
+    where: { id: backtestRunId },
+  });
+
+  if (backtestRun && (backtestRun.status === 'COMPLETED' || backtestRun.status === 'FAILED')) {
+    // Backtest already completed, immediately emit result via event system and close after 1 second
+    console.log(`⚡ SSE: Backtest ${backtestRunId} already ${backtestRun.status}, triggering immediate completion`);
+
+    // Emit the completion event through the event system (which will be picked up by the subscriber below)
+    setTimeout(() => {
+      if (backtestRun.status === 'COMPLETED') {
+        emitBacktestCompleted({
+          backtestRunId,
+          finalEquity: backtestRun.finalEquity || 0,
+          totalReturn: backtestRun.totalReturn || 0,
+          totalReturnPct: backtestRun.totalReturnPct || 0,
+          totalTrades: backtestRun.totalTrades || 0,
+          winRate: backtestRun.winRate || 0,
+          sharpeRatio: backtestRun.sharpeRatio || null,
+          maxDrawdown: backtestRun.maxDrawdown || null,
+          executionTime: backtestRun.executionTime || 0,
+        });
+      } else {
+        emitBacktestFailed({
+          backtestRunId,
+          error: backtestRun.errorMessage || 'Unknown error',
+          timestamp: new Date(),
+        });
+      }
+    }, 10); // Emit after a tiny delay to ensure the subscriber is set up
+  }
 
   // Send heartbeat to keep connection alive
   const heartbeatInterval = setInterval(async () => {

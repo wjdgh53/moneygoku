@@ -130,11 +130,23 @@ export function useBacktestStream(backtestRunId: string | null): BacktestStreamS
             totalTrades: event.data.totalTrades,
             executionTime: event.data.executionTime,
           };
+          // Close the EventSource connection when backtest completes
+          if (eventSourceRef.current) {
+            console.log('🔌 Closing SSE connection after completion');
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
           break;
 
         case 'backtest:failed':
           newState.status = 'FAILED';
           newState.error = event.data.error;
+          // Close the EventSource connection when backtest fails
+          if (eventSourceRef.current) {
+            console.log('🔌 Closing SSE connection after failure');
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
           break;
 
         case 'backtest:status_changed':
@@ -159,6 +171,13 @@ export function useBacktestStream(backtestRunId: string | null): BacktestStreamS
 
     eventSource.onerror = (error) => {
       console.error('SSE connection error:', error);
+
+      // Check if the connection was intentionally closed
+      if (eventSource.readyState === EventSource.CLOSED) {
+        console.log('SSE connection closed intentionally');
+        return;
+      }
+
       setState(prev => ({
         ...prev,
         connected: false,
